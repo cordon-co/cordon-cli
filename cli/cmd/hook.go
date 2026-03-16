@@ -1,9 +1,10 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 	"os"
 
+	"github.com/cordon-co/cordon/internal/hook"
 	"github.com/spf13/cobra"
 )
 
@@ -11,20 +12,23 @@ import (
 // It reads a JSON payload from stdin, checks the file path against policy,
 // and exits 0 (allow) or 2 with a JSON deny response.
 //
-// The --json flag is not used here: output format is always JSON because
+// The --json flag is not meaningful here: output format is always JSON because
 // this command is consumed by the agent platform, not a human.
+//
+// Exit codes:
+//   0 — allow (or non-writing tool, passed through silently)
+//   1 — malformed payload or IO error (cobra handles this via returned error)
+//   2 — deny (os.Exit called directly to bypass cobra's exit-1 handling)
 var hookCmd = &cobra.Command{
 	Use:    "hook",
 	Short:  "Evaluate a PreToolUse hook payload (reads JSON from stdin)",
 	Hidden: true, // not shown in help; invoked only by agent hook config
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Stub: allow all writes. Real implementation will:
-		//   1. Read JSON payload from os.Stdin
-		//   2. Extract tool name and file path
-		//   3. Check path against policy database
-		//   4. Exit 0 (allow) or write deny JSON and exit 2
-		fmt.Fprintln(os.Stderr, "cordon hook: not implemented (fail-open)")
-		return nil
+		err := hook.Evaluate(os.Stdin, os.Stdout)
+		if errors.Is(err, hook.ErrDenied) {
+			os.Exit(2)
+		}
+		return err // nil → exit 0; other errors → cobra prints and exits 1
 	},
 }

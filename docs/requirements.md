@@ -15,7 +15,7 @@
 | # | Requirement | Progress |
 |---|-------------|--------|
 | CLI-01 | Go project scaffolding with cross-platform build targets (macOS arm64/x64, Linux x64/arm64, Windows x64) | In Progress |
-| CLI-02 | `cordon init` creates `.cordon/` directory with `config.json` and `policy.db` in the current repo | None |
+| CLI-02 | `cordon init` creates `.cordon/` directory with `config.json` and `policy.db` in the current repo | In Progress |
 | CLI-03 | `cordon login` authenticates via GitHub OAuth browser flow and stores token in `~/.cordon/credentials.json` | None |
 | CLI-04 | `cordon logout` clears stored credentials | None |
 | CLI-05 | `cordon status` displays auth state, repo policy summary, sync state, and integrity check result | None |
@@ -48,10 +48,10 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| HOK-01 | `cordon hook` subcommand reads JSON payload from stdin and checks file path against policy | None |
-| HOK-02 | Returns exit code 0 (allow) or exit code 2 with JSON deny response including guidance to request a pass | None |
-| HOK-03 | `cordon init` writes PreToolUse hook entry to `.claude/settings.local.json` with `Write\|Edit\|MultiEdit` matcher pointing to `cordon hook` | None |
-| HOK-04 | Hook integration is additive: appends to existing hooks array without modifying other entries | None |
+| HOK-01 | `cordon hook` subcommand reads JSON payload from stdin and checks file path against policy | In Progress |
+| HOK-02 | Returns exit code 0 (allow) or exit code 2 with JSON deny response including guidance to request a pass | In Progress |
+| HOK-03 | `cordon init` writes PreToolUse hook entry to `.claude/settings.local.json` with `Write|Edit|MultiEdit` matcher pointing to `cordon hook` | In Progress |
+| HOK-04 | Hook integration is additive: appends to existing hooks array without modifying other entries | In Progress |
 | HOK-05 | `cordon init` writes `.cordon/codex-policy.md` with deny list for Codex enforcement | None |
 | HOK-06 | `cordon init` writes `.codex/config.toml` with `model_instructions_file` reference to Codex policy file | None |
 | HOK-07 | Codex policy file regenerated automatically when zones change | None |
@@ -63,7 +63,7 @@
 |---|-------------|--------|
 | MCP-01 | `cordon --mcp` runs as a stdio an MCP server (MCP Go - https://github.com/mark3labs/mcp-go) for agent integration | None |
 | MCP-03 | MCP tool: `cordon_request_access` — agent requests a pass, triggers elicitation to the human | None |
-| MCP-04 | `cordon init` adds MCP server entry to `.claude/settings.local.json` with `cordon --mcp` command | None |
+| MCP-04 | `cordon init` adds MCP server entry to `.claude/settings.local.json` with `cordon --mcp` command | In Progress |
 | MCP-05 | MCP reads from the same local policy database as the hook | None |
 
 ## Audit & Logging
