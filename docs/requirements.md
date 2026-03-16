@@ -5,16 +5,16 @@
 | # | Requirement | Progress |
 |---|-------------|--------|
 | INS-01 | `curl cordon.sh/install.sh \| sh` downloads correct platform binary and places on PATH | None |
-| INS-02 | Install script supports macOS (arm64, x64), Linux (x64, arm64) | None |
+| INS-02 | Install script supports macOS (arm64, x64), Linux (x64, arm64) | In Progress |
 | INS-03 | PowerShell install script (`irm cordon.sh/install.ps1 \| iex`) for Windows (WSL documented as required for hooks) | None |
-| INS-04 | `cordon remove` cleanly uninstalls all Cordon configuration from a repo: removes hook entries from settings.local.json, removes .codex/config.toml modifications, removes .cordon/ directory | None |
-| INS-05 | Uninstall leaves all non-Cordon hooks and config intact | None |
+| INS-04 | `cordon remove` cleanly uninstalls all Cordon configuration from a repo: removes hook entries from settings.local.json, removes .codex/config.toml modifications, removes .cordon/ directory | In Progress |
+| INS-05 | Uninstall leaves all non-Cordon hooks and config intact | In Progress |
 
 ## CLI Core
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| CLI-01 | Go project scaffolding with cross-platform build targets (macOS arm64/x64, Linux x64/arm64, Windows x64) | None |
+| CLI-01 | Go project scaffolding with cross-platform build targets (macOS arm64/x64, Linux x64/arm64, Windows x64) | In Progress |
 | CLI-02 | `cordon init` creates `.cordon/` directory with `config.json` and `policy.db` in the current repo | None |
 | CLI-03 | `cordon login` authenticates via GitHub OAuth browser flow and stores token in `~/.cordon/credentials.json` | None |
 | CLI-04 | `cordon logout` clears stored credentials | None |
