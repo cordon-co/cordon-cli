@@ -6,15 +6,36 @@ import (
 )
 
 // pathMatchesZone reports whether filePath is covered by the given zone pattern.
-// Three matching strategies are tried in order:
+//
+// repoRoot is the absolute path to the repository root. When provided, the
+// absolute filePath is first converted to a repo-relative path and matching
+// is tried against both the absolute and relative forms. This allows patterns
+// stored as relative paths (e.g. ".gitignore", "src/", "*.go") to match
+// absolute file paths received from the hook payload.
+//
+// Three matching strategies are tried against each path form:
 //  1. Exact match after path cleaning.
-//  2. Single-level glob via filepath.Match (e.g. "src/*.go").
+//  2. Single-level glob via filepath.Match (e.g. "src/*.go", "*.gitignore").
 //  3. Directory prefix match: filePath is somewhere inside the zone directory.
 //
-// Note: double-star (**) globs are not yet supported. Patterns containing **
-// will only match if filepath.Match happens to produce a result, which it will
-// not for cross-directory patterns.
-func pathMatchesZone(pattern, filePath string) bool {
+// Note: double-star (**) globs are not yet supported.
+func pathMatchesZone(pattern, filePath, repoRoot string) bool {
+	if matchOnePath(pattern, filePath) {
+		return true
+	}
+	// Also try matching against the repo-relative path.
+	if repoRoot != "" {
+		if rel, err := filepath.Rel(repoRoot, filePath); err == nil && !strings.HasPrefix(rel, "..") {
+			if matchOnePath(pattern, rel) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matchOnePath tries all three matching strategies for a single (pattern, filePath) pair.
+func matchOnePath(pattern, filePath string) bool {
 	cleanPattern := filepath.Clean(pattern)
 	cleanFile := filepath.Clean(filePath)
 

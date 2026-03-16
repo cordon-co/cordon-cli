@@ -63,6 +63,11 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 
 	user := store.CurrentOSUser()
 
+	// Normalize the pattern to a repo-relative path so that absolute paths
+	// like /home/user/repo/src/main.go are stored as src/main.go.
+	// Glob patterns and already-relative patterns are unchanged.
+	pattern = store.NormalizePattern(pattern, absRoot)
+
 	z, err := store.AddZone(policyDB, pattern, zoneType, user)
 	if err != nil {
 		return fmt.Errorf("zone add: %w", err)

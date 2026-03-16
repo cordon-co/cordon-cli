@@ -33,9 +33,8 @@ The file must already be covered by a Cordon zone. Duration formats:
 
 func init() {
 	issueCmd.Flags().StringVar(&issueFile, "file", "", "File path to grant access to (required)")
-	issueCmd.Flags().StringVar(&issueDuration, "duration", "", "Duration (e.g. 60m, 24h, 7d, 1w, indefinite) (required)")
+	issueCmd.Flags().StringVar(&issueDuration, "duration", "60m", "Duration (e.g. 60m, 24h, 7d, 1w, indefinite)")
 	_ = issueCmd.MarkFlagRequired("file")
-	_ = issueCmd.MarkFlagRequired("duration")
 }
 
 type passIssueResult struct {
@@ -56,6 +55,9 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pass issue: resolve repo root: %w", err)
 	}
 
+	// Normalize the file path to repo-relative (consistent with how zones are stored).
+	issueFile = store.NormalizePattern(issueFile, absRoot)
+
 	// Validate the file is inside a zone.
 	policyDB, err := store.OpenPolicyDB(absRoot)
 	if err != nil {
@@ -67,7 +69,7 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pass issue: migrate policy database: %w", err)
 	}
 
-	zone, err := store.ZoneForPath(policyDB, issueFile)
+	zone, err := store.ZoneForPath(policyDB, issueFile, absRoot)
 	if err != nil {
 		return fmt.Errorf("pass issue: zone lookup: %w", err)
 	}

@@ -72,7 +72,7 @@ func buildPolicyChecker() hook.PolicyChecker {
 			return true, "" // fail-open
 		}
 
-		zone, err := store.ZoneForPath(policyDB, filePath)
+		zone, err := store.ZoneForPath(policyDB, filePath, absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: zone lookup: %v\n", err)
 			return true, "" // fail-open
@@ -95,7 +95,7 @@ func buildPolicyChecker() hook.PolicyChecker {
 			return false, "" // in zone, data DB unavailable — deny
 		}
 
-		pass, err := store.ActivePassForPath(dataDB, filePath)
+		pass, err := store.ActivePassForPath(dataDB, filePath, absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: pass lookup: %v\n", err)
 			return false, "" // in zone, pass lookup failed — deny

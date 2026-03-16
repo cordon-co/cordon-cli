@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -91,10 +93,14 @@ func RevokePass(db *sql.DB, passID, revokedBy string) (bool, error) {
 // ActivePassForPath returns the first active, non-expired pass that covers
 // filePath, or nil if none exists.
 //
+// repoRoot is the absolute repo root used to relativize filePath before
+// matching — consistent with how zones are stored (relative patterns).
+//
 // A pass covers filePath if:
-//   - The pass is file-scoped (file_path != '') and file_path == filePath, OR
+//   - The pass is file-scoped (file_path != '') and matches filePath (exact or
+//     relative), OR
 //   - The pass is zone-wide (file_path == '') and its zone pattern covers filePath.
-func ActivePassForPath(db *sql.DB, filePath string) (*Pass, error) {
+func ActivePassForPath(db *sql.DB, filePath, repoRoot string) (*Pass, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	rows, err := db.Query(
@@ -110,19 +116,22 @@ func ActivePassForPath(db *sql.DB, filePath string) (*Pass, error) {
 	}
 	defer rows.Close()
 
+	// Compute the repo-relative form of filePath once for reuse.
+	relFilePath := relPath(filePath, repoRoot)
+
 	for rows.Next() {
 		p, err := scanPass(rows)
 		if err != nil {
 			return nil, err
 		}
 		if p.FilePath != "" {
-			// File-scoped pass: exact path match.
-			if p.FilePath == filePath {
+			// File-scoped pass: match either the stored path or the relativized path.
+			if p.FilePath == filePath || (relFilePath != "" && p.FilePath == relFilePath) {
 				return &p, nil
 			}
 		} else {
 			// Zone-wide pass: check whether the zone pattern covers this file.
-			if pathMatchesZone(p.Pattern, filePath) {
+			if pathMatchesZone(p.Pattern, filePath, repoRoot) {
 				return &p, nil
 			}
 		}
@@ -131,6 +140,19 @@ func ActivePassForPath(db *sql.DB, filePath string) (*Pass, error) {
 		return nil, fmt.Errorf("store: active pass scan: %w", err)
 	}
 	return nil, nil
+}
+
+// relPath returns the repo-relative form of an absolute path.
+// Returns an empty string if the path is outside the repo or on error.
+func relPath(absPath, repoRoot string) string {
+	if repoRoot == "" || !filepath.IsAbs(absPath) {
+		return ""
+	}
+	rel, err := filepath.Rel(repoRoot, absPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return rel
 }
 
 // ExpireStale updates all passes whose expires_at has passed to status 'expired'.

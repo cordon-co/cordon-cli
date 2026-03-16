@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -83,20 +85,41 @@ func RemoveZone(db *sql.DB, pattern string) (bool, error) {
 }
 
 // ZoneForPath returns the first zone whose pattern covers filePath, or nil if
-// no zone matches. Matching uses exact, single-level glob, and directory-prefix
-// strategies (see pathMatchesZone).
-func ZoneForPath(db *sql.DB, filePath string) (*Zone, error) {
+// no zone matches.
+//
+// repoRoot is the absolute repo root path. It is used to convert absolute
+// filePaths to repo-relative paths before matching, so that relative patterns
+// like "*.gitignore" or "src/" match absolute paths received from the hook.
+// Pass an empty string to skip relative-path matching.
+func ZoneForPath(db *sql.DB, filePath, repoRoot string) (*Zone, error) {
 	zones, err := ListZones(db)
 	if err != nil {
 		return nil, err
 	}
 	for _, z := range zones {
-		if pathMatchesZone(z.Pattern, filePath) {
+		if pathMatchesZone(z.Pattern, filePath, repoRoot) {
 			zCopy := z
 			return &zCopy, nil
 		}
 	}
 	return nil, nil
+}
+
+// NormalizePattern converts an absolute path pattern to a repo-relative path.
+// Glob patterns and already-relative patterns are returned unchanged.
+// If the absolute path is outside the repo root, it is returned as-is.
+func NormalizePattern(pattern, repoRoot string) string {
+	if !filepath.IsAbs(pattern) {
+		return pattern
+	}
+	if repoRoot == "" {
+		return pattern
+	}
+	rel, err := filepath.Rel(repoRoot, pattern)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return pattern // outside repo — keep absolute
+	}
+	return rel
 }
 
 // newUUID generates a random UUID v4 string without external dependencies.
