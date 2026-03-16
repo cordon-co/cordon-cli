@@ -61,6 +61,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	defer dataDB.Close()
 
+	if err := store.MigrateDataDB(dataDB); err != nil {
+		return fmt.Errorf("init: migrate data database: %w", err)
+	}
+
 	dataDBPath, err := store.DataDBPath(absRoot)
 	if err != nil {
 		return fmt.Errorf("init: resolve data db path: %w", err)

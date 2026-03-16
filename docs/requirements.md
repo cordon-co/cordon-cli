@@ -70,7 +70,7 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| AUD-01 | Every hook invocation logged to `~/.cordon/repos/<repo-hash>/data.db`: tool name, file path, user, agent, timestamp, permit/deny | None |
+| AUD-01 | Every hook invocation logged to `~/.cordon/repos/<repo-hash>/data.db`: tool name, file path, user, agent, timestamp, permit/deny | In Progress |
 | AUD-02 | All zone changes logged: creation, modification, removal, by whom, timestamp | None |
 | AUD-03 | All pass events logged: issuance, approval, denial, expiry, revocation | None |
 | AUD-04 | `cordon log` displays audit log with filtering options (--file, --denied-only, --since) | None |
