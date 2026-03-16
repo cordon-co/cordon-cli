@@ -2,10 +2,25 @@
 
 ## Summary
 
-Completed: SQLite schemas for zones and passes, zone/pass CLI commands, hook policy checking,
-codex-policy.md generation, and audit logging for zone/pass events.
+Implementing `cordon log` — the user-facing audit log viewer (AUD-04, AUD-05).
 
-## Last Completed
+## In Progress
+
+**Goal:** `cordon log` with pager-style output (like `git log`), filtering flags, and CSV export.
+
+**Key files:**
+- `cli/internal/store/logview.go` — NEW: unified query over `hook_log` + `audit_log`, `LogFilter`, `UnifiedEntry`
+- `cli/cmd/log.go` — REWRITE: pager, ANSI colours, flag wiring, JSON, CSV
+
+**Design decisions:**
+- `hook_log` (raw hook invocations) and `audit_log` (zone/pass/integrity events) are queried separately and merged in memory, sorted newest-first.
+- `--denied-only` filters `hook_log` to `decision='deny'` only; `audit_log` is excluded (zone/pass events have no allow/deny concept).
+- `--file <substr>` is a substring match on `file_path` in both tables.
+- `--since` accepts standard Go durations (`24h`, `90m`) plus a `d` shorthand (`7d`).
+- Paged display via `less -RFX` when stdout is a TTY; respects `$PAGER`.
+- ANSI colour badges: `DENY` (bold red), `ALLOW` (green), `ZONE+` (yellow), `ZONE-` (red), `PASS+` (cyan), `PASS-` (red), `PASS!` (dim).
+
+## Previously Completed
 
 - **store/schema.go** — added `MigratePolicyDB()` (zones table) and extended `MigrateDataDB()` (passes + audit_log tables)
 - **store/match.go** — `pathMatchesZone` helper (exact, glob, directory-prefix)
@@ -23,11 +38,10 @@ codex-policy.md generation, and audit logging for zone/pass events.
 - **cmd/pass/revoke.go** — `cordon pass revoke <pass-id>`
 - **cmd/init.go** — added `MigratePolicyDB()` + codex-policy.md generation
 
-## Next Steps (potential)
+## Next Steps (after this task)
 
 - **HOK-06** — `cordon init` writes `.codex/config.toml` with `model_instructions_file` reference
 - **CLI-03/04** — `cordon login` / `cordon logout` (GitHub OAuth)
 - **CLI-05** — `cordon status` with auth state, policy summary, integrity check
-- **AUD-04/05** — `cordon log` with filtering and CSV export
 - **MCP-01/03/05** — `cordon --mcp` stdio MCP server
 - **INT-01..06** — `cordon check` integrity verification
