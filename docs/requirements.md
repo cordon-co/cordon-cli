@@ -1,0 +1,139 @@
+# Cordon — Requirements
+
+## CLI Core
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| CLI-01 | Go project scaffolding with cross-platform build targets (macOS arm64/x64, Linux x64/arm64, Windows x64) | None |
+| CLI-02 | `cordon init` creates `.cordon/` directory with `config.json` and `policy.db` in the current repo | None |
+| CLI-03 | `cordon login` authenticates via GitHub OAuth browser flow and stores token in `~/.cordon/credentials.json` | None |
+| CLI-04 | `cordon logout` clears stored credentials | None |
+| CLI-05 | `cordon status` displays auth state, repo policy summary, sync state, and integrity check result | None |
+| CLI-06 | All commands support `--json` flag for structured output consumed by the IDE extension | None |
+| CLI-07 | Platform detection on init: identify installed agent platforms (Claude Code, Codex, VS Code agents) and configure enforcement for each | None |
+
+## Zone Management
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| ZON-01 | `cordon zone add <file\|folder\|glob>` creates a standard zone in policy.db | None |
+| ZON-02 | `cordon zone add --guardian <file\|folder\|glob>` creates a guardian zone (requires guardian/admin role when authenticated) | None |
+| ZON-03 | `cordon zone list` displays all active zones with type, creator, and scope | None |
+| ZON-04 | `cordon zone remove <file\|folder\|glob>` removes a zone (guardian zones require guardian/admin role) | None |
+| ZON-05 | Zones stored in `.cordon/policy.db` (SQLite) for unauthenticated users | None |
+| ZON-06 | Zones cached in `~/.cordon/repos/<repo-hash>/policy-cache.db` for authenticated users, synced from cloud | None |
+
+## Pass Management
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| PAS-01 | `cordon pass issue --file <path> --duration <duration>` issues a temporary pass | None |
+| PAS-02 | Pass durations: short-term (e.g. 60m), medium-term (e.g. 1w), indefinite | None |
+| PAS-03 | `cordon pass list` displays active and recent passes with status, issuer, and expiry | None |
+| PAS-04 | `cordon pass revoke <pass-id>` revokes an active pass | None |
+| PAS-05 | Pass state stored in `~/.cordon/repos/<repo-hash>/data.db` | None |
+| PAS-06 | Guardian zone passes restricted to guardian/admin issuance when authenticated | None |
+
+## Hook Enforcement
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| HOK-01 | `cordon hook` subcommand reads JSON payload from stdin and checks file path against policy | None |
+| HOK-02 | Returns exit code 0 (allow) or exit code 2 with JSON deny response including guidance to request a pass | None |
+| HOK-03 | `cordon init` writes PreToolUse hook entry to `.claude/settings.local.json` with `Write\|Edit\|MultiEdit` matcher pointing to `cordon hook` | None |
+| HOK-04 | Hook integration is additive: appends to existing hooks array without modifying other entries | None |
+| HOK-05 | `cordon init` writes `.cordon/codex-policy.md` with deny list for Codex enforcement | None |
+| HOK-06 | `cordon init` writes `.codex/config.toml` with `model_instructions_file` reference to Codex policy file | None |
+| HOK-07 | Codex policy file regenerated automatically when zones change | None |
+| HOK-08 | Hook queries local policy database (policy.db or policy-cache.db depending on auth state) | None |
+
+## MCP Server
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| MCP-01 | `cordon --mcp` runs as a stdio MCP server for agent integration | None |
+| MCP-02 | MCP tool: `cordon_check_zone` — agent queries whether a file is within a zone | None |
+| MCP-03 | MCP tool: `cordon_request_access` — agent requests a pass, triggers elicitation to the human | None |
+| MCP-04 | MCP tool: `cordon_register_demarcation` — agent registers intent on file(s) with description | None |
+| MCP-05 | `cordon init` adds MCP server entry to `.claude/settings.local.json` with `cordon --mcp` command | None |
+| MCP-06 | MCP reads from the same local policy database as the hook | None |
+
+## Audit & Logging
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| AUD-01 | Every hook invocation logged to `~/.cordon/repos/<repo-hash>/data.db`: tool name, file path, user, agent, timestamp, permit/deny | None |
+| AUD-02 | All zone changes logged: creation, modification, removal, by whom, timestamp | None |
+| AUD-03 | All pass events logged: issuance, approval, denial, expiry, revocation | None |
+| AUD-04 | `cordon log` displays audit log with filtering options (--file, --denied-only, --since) | None |
+| AUD-05 | `cordon log --export csv` exports audit data | None |
+
+## IDE Extension
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| EXT-01 | VS Code extension scaffolding (TypeScript) | None |
+| EXT-02 | CLI detection: check for `cordon` on PATH, prompt user to install if missing | None |
+| EXT-03 | Auth: "Sign in" button triggers `cordon login` subprocess, reads auth state from `cordon status --json` | None |
+| EXT-04 | Zone management panel: list zones, add/remove zones via `cordon zone` commands | None |
+| EXT-05 | Pass management panel: list passes, issue/revoke via `cordon pass` commands | None |
+| EXT-06 | Demarcations panel: display active agent work across the team | None |
+| EXT-07 | CodeLens provider: inline demarcation indicators on files with active agent work | None |
+| EXT-08 | Elicitation prompts: surface pass request notifications from agents | None |
+| EXT-09 | Connection status indicator in status bar | None |
+| EXT-10 | Trigger policy sync on workspace open and periodically | None |
+| EXT-11 | Trigger integrity check on workspace open | None |
+| EXT-12 | Repo setup: detect connected repo and run `cordon init` equivalent if not initialised | None |
+| EXT-13 | All extension data sourced from CLI subprocess calls with `--json` output | None |
+
+## Install & Uninstall
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| INS-01 | `curl cordon.sh/install.sh \| sh` downloads correct platform binary and places on PATH | None |
+| INS-02 | Install script supports macOS (arm64, x64), Linux (x64, arm64) | None |
+| INS-03 | PowerShell install script (`irm cordon.sh/install.ps1 \| iex`) for Windows (WSL documented as required for hooks) | None |
+| INS-04 | `cordon remove` cleanly uninstalls all Cordon configuration from a repo: removes hook entries from settings.local.json, removes .codex/config.toml modifications, removes .cordon/ directory | None |
+| INS-05 | Uninstall leaves all non-Cordon hooks and config intact | None |
+
+## Integrity
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| INT-01 | `cordon check` verifies hook entries exist in settings.local.json | None |
+| INT-02 | Verify Codex config.toml still references Cordon policy file | None |
+| INT-03 | Verify MCP entry exists in agent config | None |
+| INT-04 | Verify policy database exists and is readable | None |
+| INT-05 | Auto-repair for simple failures (missing hook entry, missing MCP entry) | None |
+| INT-06 | Log integrity check results to audit database | None |
+
+## Curated Safety Hooks
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| SAF-01 | Built-in hook rule: block destructive commands (git reset --hard, git push --force, rm -rf) | None |
+| SAF-02 | Built-in hook rule: block writes to files containing detected credential patterns | None |
+| SAF-03 | Built-in hook rule: block modifications to CI/CD config files (.github/workflows/) | None |
+| SAF-04 | Safety hooks configurable per-repo (enable/disable individual rules) | None |
+| SAF-05 | Safety hooks managed through the same `cordon hook` binary (no separate scripts) | None |
+| SAF-06 | Safety hook state stored in policy database alongside zone data | None |
+
+## CI/CD & Release
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| REL-01 | GitHub Actions workflow: cross-compile Go binary for all targets on tagged release | None |
+| REL-02 | GitHub Actions workflow: package VS Code extension on tagged release | None |
+| REL-03 | Binaries attached to GitHub release for install script consumption | None |
+| REL-04 | Versioning: CLI and extension share a single version number | None |
+
+## Policy Sync (Cordon Cloud Integration)
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| SYN-01 | `cordon sync` pulls policy from api.cordon.sh and writes to local policy cache | None |
+| SYN-02 | `cordon sync` pushes local audit data and demarcation state to the cloud | None |
+| SYN-03 | Sync is two-way: local changes push up, cloud changes pull down, cloud-wins on conflict | None |
+| SYN-04 | Offline resilience: hook enforces last-known cached policy when cloud is unreachable, fails open with logging | None |
+| SYN-05 | Telemetry batched and compressed before upload | None |
+
