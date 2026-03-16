@@ -90,6 +90,11 @@ func Evaluate(r io.Reader, w io.Writer) (*Event, error) {
 		return nil, fmt.Errorf("hook: parse payload: %w", err)
 	}
 
+	// Bash tool: check whether the command targets any files via shell write patterns.
+	if payload.ToolName == "Bash" {
+		return evaluateBash(payload, w)
+	}
+
 	// Extract the file path; tolerate missing/non-path tools gracefully.
 	var inp toolInputPath
 	if len(payload.ToolInput) > 0 {
@@ -98,7 +103,7 @@ func Evaluate(r io.Reader, w io.Writer) (*Event, error) {
 	}
 	filePath := inp.effectivePath()
 
-	// Non-writing tools: allow, log the invocation, no deny response.
+	// Non-writing tools: allow and log; no deny response.
 	if !writingTools[payload.ToolName] {
 		return &Event{
 			ToolName:  payload.ToolName,
@@ -125,23 +130,95 @@ func Evaluate(r io.Reader, w io.Writer) (*Event, error) {
 	return event, ErrDenied
 }
 
+// evaluateBash handles the Bash tool. It parses the command string for shell
+// write patterns (redirections, tee, sed -i, cp, mv). If any write target is
+// detected the command is denied; otherwise it is allowed and logged.
+func evaluateBash(payload hookPayload, w io.Writer) (*Event, error) {
+	command := parseBashToolInput(payload.ToolInput)
+	targets := bashWriteTargets(command)
+
+	// No write pattern detected — allow.
+	if len(targets) == 0 {
+		return &Event{
+			ToolName:  payload.ToolName,
+			FilePath:  "",
+			ToolInput: payload.ToolInput,
+			Decision:  DecisionAllow,
+			Cwd:       payload.Cwd,
+		}, nil
+	}
+
+	// TODO: check each target against the policy database (zones + passes).
+	// For now, deny any bash command that writes to any file.
+	primaryTarget := targets[0]
+	event := &Event{
+		ToolName:  payload.ToolName,
+		FilePath:  primaryTarget,
+		ToolInput: payload.ToolInput,
+		Decision:  DecisionDeny,
+		Cwd:       payload.Cwd,
+	}
+
+	if err := writeBashDeny(w, primaryTarget, targets); err != nil {
+		return nil, err
+	}
+	return event, ErrDenied
+}
+
+// policyDenyReason returns the denial reason string for a direct file write.
+func policyDenyReason(path string) string {
+	passCmd := "cordon pass issue --file " + path
+	if path == "" {
+		path = "this file"
+		passCmd = "cordon pass issue --file <filepath>"
+	}
+	return fmt.Sprintf(
+		"CORDON POLICY: %s is protected by a Cordon zone policy. "+
+			"Do not attempt to write to this file through any alternative method, "+
+			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
+			"This is an enforced policy restriction, not a technical error. "+
+			"If you need to modify this file, request access using the cordon_request_access MCP tool "+
+			"or ask the user to run: %s",
+		path, passCmd,
+	)
+}
+
+// policyBashDenyReason returns the denial reason for a bash command that
+// targets one or more protected files.
+func policyBashDenyReason(primary string, all []string) string {
+	target := primary
+	if target == "" {
+		target = "a protected file"
+	}
+	passCmd := "cordon pass issue --file " + primary
+	if primary == "" {
+		passCmd = "cordon pass issue --file <filepath>"
+	}
+	return fmt.Sprintf(
+		"CORDON POLICY: This command would write to %s which is protected by a Cordon zone policy. "+
+			"Do not attempt to write to this file through any alternative method, "+
+			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
+			"This is an enforced policy restriction, not a technical error. "+
+			"If you need to modify this file, request access using the cordon_request_access MCP tool "+
+			"or ask the user to run: %s",
+		target, passCmd,
+	)
+}
+
 func writeDeny(w io.Writer, path string) error {
+	return encodedeny(w, policyDenyReason(path))
+}
+
+func writeBashDeny(w io.Writer, primary string, all []string) error {
+	return encodedeny(w, policyBashDenyReason(primary, all))
+}
+
+func encodedeny(w io.Writer, reason string) error {
 	type denyResponse struct {
 		Decision string `json:"decision"`
 		Reason   string `json:"reason"`
 	}
-
-	reason := fmt.Sprintf(
-		"cordon: write to %s is not permitted. Request a pass with: cordon pass issue --file %s",
-		path, path,
-	)
-	if path == "" {
-		reason = "cordon: write is not permitted (could not determine file path)"
-	}
-
-	resp := denyResponse{Decision: "block", Reason: reason}
-
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	return enc.Encode(resp)
+	return enc.Encode(denyResponse{Decision: "block", Reason: reason})
 }

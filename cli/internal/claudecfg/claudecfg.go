@@ -14,7 +14,7 @@ import (
 
 const (
 	cordonCommand   = "cordon hook"
-	cordonMatcher   = "Write|Edit|MultiEdit"
+	cordonMatcher   = "*"
 	cordonMCPKey    = "cordon"
 	settingsRelPath = ".claude/settings.local.json"
 )
