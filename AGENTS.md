@@ -42,13 +42,13 @@ The CLI is the core of the product. The extension is a thin UI layer that calls 
 ## Task Management
 
 Before starting work:
-1. Read `docs/current_task.md` for context on any in-progress work
+1. Read `docs/current-task.md` for context on any in-progress work
 2. Read `docs/requirements.md` to understand the full scope when needed
-3. Update `docs/current_task.md` with a summary of the work you are about to perform, the key files involved, and the relevant requirement IDs
+3. Update `docs/current-task.md` with a summary of the work you are about to perform, the key files involved, and the relevant requirement IDs
 
 After completing work:
 1. Update the relevant requirement progress in `docs/requirements.md` (None → In Progress → Done)
-2. Update `docs/current_task.md` to reflect completion and clear the task, or update it with the next steps if work is ongoing
+2. Update `docs/current-task.md` to reflect completion and clear the task, or update it with the next steps if work is ongoing
 
 ## Code Conventions
 

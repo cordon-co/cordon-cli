@@ -1,5 +1,15 @@
 # Cordon — Requirements
 
+## Install & Uninstall
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| INS-01 | `curl cordon.sh/install.sh \| sh` downloads correct platform binary and places on PATH | None |
+| INS-02 | Install script supports macOS (arm64, x64), Linux (x64, arm64) | None |
+| INS-03 | PowerShell install script (`irm cordon.sh/install.ps1 \| iex`) for Windows (WSL documented as required for hooks) | None |
+| INS-04 | `cordon remove` cleanly uninstalls all Cordon configuration from a repo: removes hook entries from settings.local.json, removes .codex/config.toml modifications, removes .cordon/ directory | None |
+| INS-05 | Uninstall leaves all non-Cordon hooks and config intact | None |
+
 ## CLI Core
 
 | # | Requirement | Progress |
@@ -51,12 +61,10 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| MCP-01 | `cordon --mcp` runs as a stdio MCP server for agent integration | None |
-| MCP-02 | MCP tool: `cordon_check_zone` — agent queries whether a file is within a zone | None |
+| MCP-01 | `cordon --mcp` runs as a stdio an MCP server (MCP Go - https://github.com/mark3labs/mcp-go) for agent integration | None |
 | MCP-03 | MCP tool: `cordon_request_access` — agent requests a pass, triggers elicitation to the human | None |
-| MCP-04 | MCP tool: `cordon_register_demarcation` — agent registers intent on file(s) with description | None |
-| MCP-05 | `cordon init` adds MCP server entry to `.claude/settings.local.json` with `cordon --mcp` command | None |
-| MCP-06 | MCP reads from the same local policy database as the hook | None |
+| MCP-04 | `cordon init` adds MCP server entry to `.claude/settings.local.json` with `cordon --mcp` command | None |
+| MCP-05 | MCP reads from the same local policy database as the hook | None |
 
 ## Audit & Logging
 
@@ -85,16 +93,6 @@
 | EXT-11 | Trigger integrity check on workspace open | None |
 | EXT-12 | Repo setup: detect connected repo and run `cordon init` equivalent if not initialised | None |
 | EXT-13 | All extension data sourced from CLI subprocess calls with `--json` output | None |
-
-## Install & Uninstall
-
-| # | Requirement | Progress |
-|---|-------------|--------|
-| INS-01 | `curl cordon.sh/install.sh \| sh` downloads correct platform binary and places on PATH | None |
-| INS-02 | Install script supports macOS (arm64, x64), Linux (x64, arm64) | None |
-| INS-03 | PowerShell install script (`irm cordon.sh/install.ps1 \| iex`) for Windows (WSL documented as required for hooks) | None |
-| INS-04 | `cordon remove` cleanly uninstalls all Cordon configuration from a repo: removes hook entries from settings.local.json, removes .codex/config.toml modifications, removes .cordon/ directory | None |
-| INS-05 | Uninstall leaves all non-Cordon hooks and config intact | None |
 
 ## Integrity
 
