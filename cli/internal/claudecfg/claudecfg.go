@@ -19,6 +19,8 @@ const (
 	cordonMCPToolPerm  = "mcp__cordon__cordon_request_access"
 	settingsRelPath    = ".claude/settings.local.json"
 	mcpRelPath         = ".mcp.json"
+	vscodeMCPRelPath   = ".vscode/mcp.json"
+	vscodeHookRelPath  = ".github/hooks/cordon.json"
 )
 
 // AddCordonEntries writes the Cordon PreToolUse hook into
@@ -48,7 +50,24 @@ func AddCordonEntries(repoRoot string) error {
 		return err
 	}
 	addMCPEntry(mcpData)
-	return writeAtomic(mcpPath, mcpData)
+	if err := writeAtomic(mcpPath, mcpData); err != nil {
+		return err
+	}
+
+	// MCP server also goes in .vscode/mcp.json (VS Code Copilot reads from here)
+	vscodeMCPPath := filepath.Join(repoRoot, vscodeMCPRelPath)
+	vscodeMCPData, err := readSettings(vscodeMCPPath)
+	if err != nil {
+		return err
+	}
+	addVSCodeMCPEntry(vscodeMCPData)
+	if err := writeAtomic(vscodeMCPPath, vscodeMCPData); err != nil {
+		return err
+	}
+
+	// Hook for VS Code Copilot goes in .vscode/hooks/cordon.json
+	vscodeHookPath := filepath.Join(repoRoot, vscodeHookRelPath)
+	return writeVSCodeHookFile(vscodeHookPath)
 }
 
 // RemoveCordonEntries removes the Cordon PreToolUse hook from
@@ -81,6 +100,25 @@ func RemoveCordonEntries(repoRoot string) error {
 	if mcpData != nil {
 		removeMCPEntry(mcpData)
 		if err := writeAtomic(mcpPath, mcpData); err != nil {
+			return err
+		}
+	}
+
+	// Remove VS Code hook file
+	vscodeHookPath := filepath.Join(repoRoot, vscodeHookRelPath)
+	if err := os.Remove(vscodeHookPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	// Remove MCP entry from .vscode/mcp.json
+	vscodeMCPPath := filepath.Join(repoRoot, vscodeMCPRelPath)
+	vscodeMCPData, err := readSettings(vscodeMCPPath)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if vscodeMCPData != nil {
+		removeVSCodeMCPEntry(vscodeMCPData)
+		if err := writeAtomic(vscodeMCPPath, vscodeMCPData); err != nil {
 			return err
 		}
 	}
@@ -127,6 +165,56 @@ func addHookEntry(data map[string]interface{}) {
 	}
 	hooks["PreToolUse"] = append(preToolUse, newGroup)
 	data["hooks"] = hooks
+}
+
+// writeVSCodeHookFile writes the VS Code Copilot hook file at the given path.
+// The file is a standalone JSON config (not merged into an existing file),
+// so it is written atomically and is idempotent.
+func writeVSCodeHookFile(path string) error {
+	data := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"type":    "command",
+					"command": cordonCommand,
+				},
+			},
+		},
+	}
+	return writeAtomic(path, data)
+}
+
+// addVSCodeMCPEntry inserts the Cordon MCP server entry into VS Code's
+// .vscode/mcp.json format (uses "servers" key). Idempotent.
+func addVSCodeMCPEntry(data map[string]interface{}) {
+	servers := getOrCreateMap(data, "servers")
+	if _, exists := servers[cordonMCPKey]; exists {
+		return
+	}
+	servers[cordonMCPKey] = map[string]interface{}{
+		"type":    "stdio",
+		"command": "cordon",
+		"args":    []interface{}{"--mcp"},
+	}
+	data["servers"] = servers
+}
+
+// removeVSCodeMCPEntry removes the Cordon entry from .vscode/mcp.json.
+func removeVSCodeMCPEntry(data map[string]interface{}) {
+	serversRaw, ok := data["servers"]
+	if !ok {
+		return
+	}
+	servers, ok := serversRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+	delete(servers, cordonMCPKey)
+	if len(servers) == 0 {
+		delete(data, "servers")
+	} else {
+		data["servers"] = servers
+	}
 }
 
 // addMCPEntry inserts the Cordon MCP server entry. Idempotent.

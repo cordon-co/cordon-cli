@@ -30,12 +30,14 @@ func Run(_ context.Context) error {
 
 	s := server.NewMCPServer("cordon", "0.1.0",
 		server.WithToolCapabilities(false),
+		server.WithElicitation(),
 	)
 
 	requestAccessTool := mcp.NewTool("cordon_request_access",
 		mcp.WithDescription(
 			"Request temporary write access to a file protected by a Cordon zone policy. "+
 				"Call this tool when a Cordon hook has denied a write operation. "+
+				"The user will be asked to approve or deny the request. "+
 				"Returns a pass ID and expiry time on success.",
 		),
 		mcp.WithString("file_path",
@@ -47,19 +49,21 @@ func Run(_ context.Context) error {
 		),
 	)
 
-	s.AddTool(requestAccessTool, makeRequestAccessHandler(absRoot))
+	s.AddTool(requestAccessTool, makeRequestAccessHandler(s, absRoot))
 
 	return server.ServeStdio(s)
 }
 
-// makeRequestAccessHandler returns a ToolHandlerFunc that issues a 60-minute
-// pass for the requested file, provided the file is covered by a zone.
-func makeRequestAccessHandler(absRoot string) server.ToolHandlerFunc {
+// makeRequestAccessHandler returns a ToolHandlerFunc that elicits user
+// confirmation before issuing a 60-minute pass for the requested file.
+func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		rawPath, err := req.RequireString("file_path")
 		if err != nil {
 			return nil, fmt.Errorf("file_path is required")
 		}
+
+		reason, _ := req.RequireString("reason")
 
 		// Normalise to repo-relative so it matches how zone patterns are stored.
 		filePath := store.NormalizePattern(rawPath, absRoot)
@@ -80,10 +84,63 @@ func makeRequestAccessHandler(absRoot string) server.ToolHandlerFunc {
 			return nil, fmt.Errorf("cordon: zone lookup: %w", err)
 		}
 		if zone == nil {
-			return nil, fmt.Errorf("%q is not covered by any Cordon zone — no pass can be issued", filePath)
+			return mcp.NewToolResultError(
+				fmt.Sprintf("%q is not covered by any Cordon zone — no pass can be issued.", filePath),
+			), nil
 		}
 
-		// Issue a 60-minute pass (self-service; elicitation flow comes later).
+		// Ask the user for confirmation via elicitation.
+		msg := fmt.Sprintf(
+			"An agent is requesting write access to a file protected by a Cordon zone.\n\nFile: %s\nZone pattern: %s\nZone type: %s",
+			filePath, zone.Pattern, zone.ZoneType,
+		)
+		if reason != "" {
+			msg += fmt.Sprintf("\nReason: %s", reason)
+		}
+		msg += "\n\nGrant a 60-minute access pass?"
+
+		elicitResult, err := s.RequestElicitation(ctx, mcp.ElicitationRequest{
+			Params: mcp.ElicitationParams{
+				Message: msg,
+				RequestedSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"approve": map[string]interface{}{
+							"type":        "boolean",
+							"description": "Grant write access?",
+							"default":     true,
+						},
+					},
+					"required": []string{"approve"},
+				},
+			},
+		})
+		if err != nil {
+			return mcp.NewToolResultError(
+				fmt.Sprintf("Could not request user confirmation: %v", err),
+			), nil
+		}
+
+		// Check whether the user approved.
+		if elicitResult.Action != mcp.ElicitationResponseActionAccept {
+			return mcp.NewToolResultText(
+				fmt.Sprintf("Access request for %s was declined by the user.", filePath),
+			), nil
+		}
+
+		approved := false
+		if content, ok := elicitResult.Content.(map[string]interface{}); ok {
+			if v, ok := content["approve"].(bool); ok {
+				approved = v
+			}
+		}
+		if !approved {
+			return mcp.NewToolResultText(
+				fmt.Sprintf("Access request for %s was denied by the user.", filePath),
+			), nil
+		}
+
+		// User approved — issue the pass.
 		const defaultMinutes = 60
 		expiresAt := time.Now().Add(defaultMinutes * time.Minute)
 		expiresAtStr := expiresAt.UTC().Format(time.RFC3339)

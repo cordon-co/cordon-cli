@@ -32,7 +32,7 @@ var hookCmd = &cobra.Command{
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		checker := buildPolicyChecker()
-		event, err := hook.Evaluate(os.Stdin, os.Stdout, checker)
+		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker)
 
 		// Log every invocation. Logging failures are non-fatal (fail-open).
 		if event != nil {
