@@ -2,23 +2,12 @@
 
 ## Summary
 
-Implementing `cordon log` — the user-facing audit log viewer (AUD-04, AUD-05).
+Completed: `cordon log` — the user-facing audit log viewer (AUD-04, AUD-05).
 
-## In Progress
+## Last Completed
 
-**Goal:** `cordon log` with pager-style output (like `git log`), filtering flags, and CSV export.
-
-**Key files:**
-- `cli/internal/store/logview.go` — NEW: unified query over `hook_log` + `audit_log`, `LogFilter`, `UnifiedEntry`
-- `cli/cmd/log.go` — REWRITE: pager, ANSI colours, flag wiring, JSON, CSV
-
-**Design decisions:**
-- `hook_log` (raw hook invocations) and `audit_log` (zone/pass/integrity events) are queried separately and merged in memory, sorted newest-first.
-- `--denied-only` filters `hook_log` to `decision='deny'` only; `audit_log` is excluded (zone/pass events have no allow/deny concept).
-- `--file <substr>` is a substring match on `file_path` in both tables.
-- `--since` accepts standard Go durations (`24h`, `90m`) plus a `d` shorthand (`7d`).
-- Paged display via `less -RFX` when stdout is a TTY; respects `$PAGER`.
-- ANSI colour badges: `DENY` (bold red), `ALLOW` (green), `ZONE+` (yellow), `ZONE-` (red), `PASS+` (cyan), `PASS-` (red), `PASS!` (dim).
+- **store/logview.go** — NEW: `LogFilter`, `UnifiedEntry`, `ListUnifiedLog` (merges `hook_log` + `audit_log`, filtered + sorted newest-first)
+- **cmd/log.go** — REWRITE: pager via `less -RFX` when TTY, ANSI colour badges, `--file`/`--denied-only`/`--since`/`--export csv`, `--json`
 
 ## Previously Completed
 
