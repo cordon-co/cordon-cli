@@ -26,36 +26,36 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| ZON-01 | `cordon zone add <file\|folder\|glob>` creates a standard zone in policy.db | None |
-| ZON-02 | `cordon zone add --guardian <file\|folder\|glob>` creates a guardian zone (requires guardian/admin role when authenticated) | None |
-| ZON-03 | `cordon zone list` displays all active zones with type, creator, and scope | None |
-| ZON-04 | `cordon zone remove <file\|folder\|glob>` removes a zone (guardian zones require guardian/admin role) | None |
-| ZON-05 | Zones stored in `.cordon/policy.db` (SQLite) for unauthenticated users | None |
+| ZON-01 | `cordon zone add <file\|folder\|glob>` creates a standard zone in policy.db | Done |
+| ZON-02 | `cordon zone add --guardian <file\|folder\|glob>` creates a guardian zone (requires guardian/admin role when authenticated) | Done |
+| ZON-03 | `cordon zone list` displays all active zones with type, creator, and scope | Done |
+| ZON-04 | `cordon zone remove <file\|folder\|glob>` removes a zone (guardian zones require guardian/admin role) | Done |
+| ZON-05 | Zones stored in `.cordon/policy.db` (SQLite) for unauthenticated users | Done |
 | ZON-06 | Zones cached in `~/.cordon/repos/<repo-hash>/policy-cache.db` for authenticated users, synced from cloud | None |
 
 ## Pass Management
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| PAS-01 | `cordon pass issue --file <path> --duration <duration>` issues a temporary pass | None |
-| PAS-02 | Pass durations: short-term (e.g. 60m), medium-term (e.g. 1w), indefinite | None |
-| PAS-03 | `cordon pass list` displays active and recent passes with status, issuer, and expiry | None |
-| PAS-04 | `cordon pass revoke <pass-id>` revokes an active pass | None |
-| PAS-05 | Pass state stored in `~/.cordon/repos/<repo-hash>/data.db` | None |
+| PAS-01 | `cordon pass issue --file <path> --duration <duration>` issues a temporary pass | Done |
+| PAS-02 | Pass durations: short-term (e.g. 60m), medium-term (e.g. 1w), indefinite | Done |
+| PAS-03 | `cordon pass list` displays active and recent passes with status, issuer, and expiry | Done |
+| PAS-04 | `cordon pass revoke <pass-id>` revokes an active pass | Done |
+| PAS-05 | Pass state stored in `~/.cordon/repos/<repo-hash>/data.db` | Done |
 | PAS-06 | Guardian zone passes restricted to guardian/admin issuance when authenticated | None |
 
 ## Hook Enforcement
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| HOK-01 | `cordon hook` subcommand reads JSON payload from stdin and checks file path against policy | In Progress |
-| HOK-02 | Returns exit code 0 (allow) or exit code 2 with JSON deny response including guidance to request a pass | In Progress |
-| HOK-03 | `cordon init` writes PreToolUse hook entry to `.claude/settings.local.json` with `Write|Edit|MultiEdit` matcher pointing to `cordon hook` | In Progress |
-| HOK-04 | Hook integration is additive: appends to existing hooks array without modifying other entries | In Progress |
-| HOK-05 | `cordon init` writes `.cordon/codex-policy.md` with deny list for Codex enforcement | None |
+| HOK-01 | `cordon hook` subcommand reads JSON payload from stdin and checks file path against policy | Done |
+| HOK-02 | Returns exit code 0 (allow) or exit code 2 with JSON deny response including guidance to request a pass | Done |
+| HOK-03 | `cordon init` writes PreToolUse hook entry to `.claude/settings.local.json` with `Write|Edit|MultiEdit` matcher pointing to `cordon hook` | Done |
+| HOK-04 | Hook integration is additive: appends to existing hooks array without modifying other entries | Done |
+| HOK-05 | `cordon init` writes `.cordon/codex-policy.md` with deny list for Codex enforcement | Done |
 | HOK-06 | `cordon init` writes `.codex/config.toml` with `model_instructions_file` reference to Codex policy file | None |
-| HOK-07 | Codex policy file regenerated automatically when zones change | None |
-| HOK-08 | Hook queries local policy database (policy.db or policy-cache.db depending on auth state) | None |
+| HOK-07 | Codex policy file regenerated automatically when zones change | Done |
+| HOK-08 | Hook queries local policy database (policy.db or policy-cache.db depending on auth state) | Done |
 
 ## MCP Server
 
@@ -70,9 +70,9 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| AUD-01 | Every hook invocation logged to `~/.cordon/repos/<repo-hash>/data.db`: tool name, file path, user, agent, timestamp, permit/deny | In Progress |
-| AUD-02 | All zone changes logged: creation, modification, removal, by whom, timestamp | None |
-| AUD-03 | All pass events logged: issuance, approval, denial, expiry, revocation | None |
+| AUD-01 | Every hook invocation logged to `~/.cordon/repos/<repo-hash>/data.db`: tool name, file path, user, agent, timestamp, permit/deny | Done |
+| AUD-02 | All zone changes logged: creation, modification, removal, by whom, timestamp | Done |
+| AUD-03 | All pass events logged: issuance, approval, denial, expiry, revocation | Done |
 | AUD-04 | `cordon log` displays audit log with filtering options (--file, --denied-only, --since) | None |
 | AUD-05 | `cordon log --export csv` exports audit data | None |
 

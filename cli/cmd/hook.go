@@ -31,7 +31,8 @@ var hookCmd = &cobra.Command{
 	Hidden: true, // not shown in help; invoked only by agent hook config
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		event, err := hook.Evaluate(os.Stdin, os.Stdout)
+		checker := buildPolicyChecker()
+		event, err := hook.Evaluate(os.Stdin, os.Stdout, checker)
 
 		// Log every invocation. Logging failures are non-fatal (fail-open).
 		if event != nil {
@@ -43,6 +44,67 @@ var hookCmd = &cobra.Command{
 		}
 		return err // nil → exit 0; other errors → cobra prints and exits 1
 	},
+}
+
+// buildPolicyChecker returns a PolicyChecker that opens the policy and data
+// databases from the agent cwd on each call.
+//
+// On any infrastructure error (DB unreadable, repo root not found) the checker
+// fails open — it returns (true, "") so the hook allows the write and logs the
+// failure. This matches Cordon's fail-open design principle.
+func buildPolicyChecker() hook.PolicyChecker {
+	return func(filePath, cwd string) (allowed bool, passID string) {
+		absRoot, err := resolveRepoRoot(cwd)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: policy check: resolve repo root: %v\n", err)
+			return true, "" // fail-open
+		}
+
+		policyDB, err := store.OpenPolicyDB(absRoot)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: policy check: open policy db: %v\n", err)
+			return true, "" // fail-open
+		}
+		defer policyDB.Close()
+
+		if err := store.MigratePolicyDB(policyDB); err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: policy check: migrate policy db: %v\n", err)
+			return true, "" // fail-open
+		}
+
+		zone, err := store.ZoneForPath(policyDB, filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: policy check: zone lookup: %v\n", err)
+			return true, "" // fail-open
+		}
+		if zone == nil {
+			// File is not in any zone — allow.
+			return true, ""
+		}
+
+		// File is in a zone. Check for an active pass in the data database.
+		dataDB, err := store.OpenDataDB(absRoot)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: policy check: open data db: %v\n", err)
+			return false, "" // in zone, data DB unavailable — deny
+		}
+		defer dataDB.Close()
+
+		if err := store.MigrateDataDB(dataDB); err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: policy check: migrate data db: %v\n", err)
+			return false, "" // in zone, data DB unavailable — deny
+		}
+
+		pass, err := store.ActivePassForPath(dataDB, filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: policy check: pass lookup: %v\n", err)
+			return false, "" // in zone, pass lookup failed — deny
+		}
+		if pass == nil {
+			return false, "" // in zone, no active pass — deny
+		}
+		return true, pass.ID // in zone, active pass — allow
+	}
 }
 
 // logHookEvent writes a hook invocation to the audit log.

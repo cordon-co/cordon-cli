@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cordon-co/cordon/internal/claudecfg"
+	"github.com/cordon-co/cordon/internal/codexpolicy"
 	"github.com/cordon-co/cordon/internal/flags"
 	"github.com/cordon-co/cordon/internal/reporoot"
 	"github.com/cordon-co/cordon/internal/store"
@@ -31,6 +32,7 @@ type initResult struct {
 	PolicyDB     string `json:"policy_db"`
 	DataDB       string `json:"data_db"`
 	SettingsFile string `json:"settings_file"`
+	CodexPolicy  string `json:"codex_policy"`
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -54,6 +56,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	defer policyDB.Close()
 
+	if err := store.MigratePolicyDB(policyDB); err != nil {
+		return fmt.Errorf("init: migrate policy database: %w", err)
+	}
+
 	// Data database (~/.cordon/repos/<hash>/data.db)
 	dataDB, err := store.OpenDataDB(absRoot)
 	if err != nil {
@@ -76,11 +82,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("init: update settings.local.json: %w", err)
 	}
 
+	// .cordon/codex-policy.md — generate from current zone list (may be empty on first init).
+	zones, err := store.ListZones(policyDB)
+	if err != nil {
+		return fmt.Errorf("init: list zones for Codex policy: %w", err)
+	}
+	if err := codexpolicy.Generate(absRoot, zones); err != nil {
+		return fmt.Errorf("init: generate Codex policy: %w", err)
+	}
+	codexPolicyPath := filepath.Join(absRoot, ".cordon", "codex-policy.md")
+
 	result := initResult{
 		RepoRoot:     absRoot,
 		PolicyDB:     filepath.Join(absRoot, ".cordon", "policy.db"),
 		DataDB:       dataDBPath,
 		SettingsFile: settingsPath,
+		CodexPolicy:  codexPolicyPath,
 	}
 
 	if flags.JSON {
@@ -91,9 +108,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	homeDir, _ := os.UserHomeDir()
 	fmt.Printf("cordon initialised in %s\n", absRoot)
-	fmt.Printf("  policy DB:    %s\n", shortenHome(result.PolicyDB, homeDir))
-	fmt.Printf("  data DB:      %s\n", shortenHome(result.DataDB, homeDir))
-	fmt.Printf("  Claude hooks: %s\n", shortenHome(result.SettingsFile, homeDir))
+	fmt.Printf("  policy DB:     %s\n", shortenHome(result.PolicyDB, homeDir))
+	fmt.Printf("  data DB:       %s\n", shortenHome(result.DataDB, homeDir))
+	fmt.Printf("  Claude hooks:  %s\n", shortenHome(result.SettingsFile, homeDir))
+	fmt.Printf("  Codex policy:  %s\n", shortenHome(result.CodexPolicy, homeDir))
 	return nil
 }
 

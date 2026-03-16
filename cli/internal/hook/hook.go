@@ -22,6 +22,22 @@ const (
 	DecisionDeny  Decision = "deny"
 )
 
+// PolicyChecker checks whether a write to filePath should be allowed.
+//
+// filePath is the file being written; cwd is the agent working directory
+// (from the hook payload), which is used to locate the policy database.
+//
+// Return values:
+//   - allowed=true,  passID=""    — file is not in any zone (allow)
+//   - allowed=true,  passID="…"   — file is in a zone and covered by an active pass (allow)
+//   - allowed=false, passID=""    — file is in a zone with no active pass (deny)
+//
+// On infrastructure errors (DB unreadable, etc.) the checker should return
+// (true, "") to fail-open per Cordon's fail-open policy.
+//
+// A nil PolicyChecker causes all writes to be allowed (fail-open).
+type PolicyChecker func(filePath, cwd string) (allowed bool, passID string)
+
 // Event is returned by Evaluate for every tool invocation (writing or not).
 // It carries all fields needed for audit logging.
 type Event struct {
@@ -29,6 +45,7 @@ type Event struct {
 	FilePath  string          // may be empty for tools with no file path (e.g. Bash)
 	ToolInput json.RawMessage // full raw tool_input JSON from the hook payload
 	Decision  Decision
+	PassID    string // non-empty if write was allowed via an active pass
 	Cwd       string // cwd from the hook payload; used by the logger for DB path discovery
 }
 
@@ -73,13 +90,16 @@ func (t toolInputPath) effectivePath() string {
 // operation should be allowed or denied, writes the deny response to w if
 // blocked, and returns an Event for every invocation for audit logging.
 //
+// checker is consulted for every writing tool. Pass nil to allow all writes
+// (fail-open behaviour, used when databases are unavailable).
+//
 // Return values:
 //   - event, nil error      → allowed (exit 0); event carries the log data
 //   - event, ErrDenied      → denied; JSON written to w; caller must exit 2
 //   - nil, other error      → malformed payload or IO error; caller should exit 1
 //
 // Evaluate never calls os.Exit itself, making it fully testable.
-func Evaluate(r io.Reader, w io.Writer) (*Event, error) {
+func Evaluate(r io.Reader, w io.Writer, checker PolicyChecker) (*Event, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("hook: read stdin: %w", err)
@@ -92,7 +112,7 @@ func Evaluate(r io.Reader, w io.Writer) (*Event, error) {
 
 	// Bash tool: check whether the command targets any files via shell write patterns.
 	if payload.ToolName == "Bash" {
-		return evaluateBash(payload, w)
+		return evaluateBash(payload, w, checker)
 	}
 
 	// Extract the file path; tolerate missing/non-path tools gracefully.
@@ -114,8 +134,20 @@ func Evaluate(r io.Reader, w io.Writer) (*Event, error) {
 		}, nil
 	}
 
-	// TODO: check filePath against policy database (zones + passes).
-	// For now, deny all writes.
+	// Check the file against the policy database (zones + passes).
+	allowed, passID := checkPolicy(checker, filePath, payload.Cwd)
+
+	if allowed {
+		return &Event{
+			ToolName:  payload.ToolName,
+			FilePath:  filePath,
+			ToolInput: payload.ToolInput,
+			Decision:  DecisionAllow,
+			PassID:    passID,
+			Cwd:       payload.Cwd,
+		}, nil
+	}
+
 	event := &Event{
 		ToolName:  payload.ToolName,
 		FilePath:  filePath,
@@ -123,7 +155,6 @@ func Evaluate(r io.Reader, w io.Writer) (*Event, error) {
 		Decision:  DecisionDeny,
 		Cwd:       payload.Cwd,
 	}
-
 	if err := writeDeny(w, filePath); err != nil {
 		return nil, err
 	}
@@ -133,7 +164,7 @@ func Evaluate(r io.Reader, w io.Writer) (*Event, error) {
 // evaluateBash handles the Bash tool. It parses the command string for shell
 // write patterns (redirections, tee, sed -i, cp, mv). If any write target is
 // detected the command is denied; otherwise it is allowed and logged.
-func evaluateBash(payload hookPayload, w io.Writer) (*Event, error) {
+func evaluateBash(payload hookPayload, w io.Writer, checker PolicyChecker) (*Event, error) {
 	command := parseBashToolInput(payload.ToolInput)
 	targets := bashWriteTargets(command)
 
@@ -148,21 +179,43 @@ func evaluateBash(payload hookPayload, w io.Writer) (*Event, error) {
 		}, nil
 	}
 
-	// TODO: check each target against the policy database (zones + passes).
-	// For now, deny any bash command that writes to any file.
-	primaryTarget := targets[0]
-	event := &Event{
-		ToolName:  payload.ToolName,
-		FilePath:  primaryTarget,
-		ToolInput: payload.ToolInput,
-		Decision:  DecisionDeny,
-		Cwd:       payload.Cwd,
+	// Check each target against the policy database. Deny if any target is in
+	// a zone without an active pass. We deny on the first violation found.
+	for _, target := range targets {
+		allowed, _ := checkPolicy(checker, target, payload.Cwd)
+		if !allowed {
+			primaryTarget := targets[0]
+			event := &Event{
+				ToolName:  payload.ToolName,
+				FilePath:  primaryTarget,
+				ToolInput: payload.ToolInput,
+				Decision:  DecisionDeny,
+				Cwd:       payload.Cwd,
+			}
+			if err := writeBashDeny(w, primaryTarget, targets); err != nil {
+				return nil, err
+			}
+			return event, ErrDenied
+		}
 	}
 
-	if err := writeBashDeny(w, primaryTarget, targets); err != nil {
-		return nil, err
+	// All targets are clear — allow.
+	return &Event{
+		ToolName:  payload.ToolName,
+		FilePath:  targets[0],
+		ToolInput: payload.ToolInput,
+		Decision:  DecisionAllow,
+		Cwd:       payload.Cwd,
+	}, nil
+}
+
+// checkPolicy calls the checker if non-nil, returning (true, "") as the
+// fail-open default when checker is nil.
+func checkPolicy(checker PolicyChecker, filePath, cwd string) (allowed bool, passID string) {
+	if checker == nil {
+		return true, ""
 	}
-	return event, ErrDenied
+	return checker(filePath, cwd)
 }
 
 // policyDenyReason returns the denial reason string for a direct file write.
