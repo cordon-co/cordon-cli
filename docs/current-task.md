@@ -2,34 +2,15 @@
 
 ## Summary
 
-Implementing `cordon --mcp` — a stdio MCP server (MCP-01, MCP-03, MCP-05) using the
-`mcp-go` framework. The initial tool is `cordon_request_access`: an agent calls this
-when denied a write, provides a file path and reason, and receives a temporary pass.
+Completed: `cordon --mcp` stdio MCP server with `cordon_request_access` tool (MCP-01, MCP-03, MCP-05).
 
-## Key Files
+## Last Completed
 
-- **cli/cmd/root.go** — replace stub `runMCPServer()` with a real call
-- **cli/internal/mcpserver/mcpserver.go** — NEW: MCP server + `cordon_request_access` tool
-- **cli/go.mod / go.sum** — add `github.com/mark3labs/mcp-go`
-
-## Approach
-
-1. `go get github.com/mark3labs/mcp-go` to add the dependency
-2. Create `cli/internal/mcpserver/` package
-3. `Run(ctx)` opens policy.db + data.db from the repo root (same pattern as `cmd/hook.go`),
-   creates an `mcp.NewServer`, registers `cordon_request_access`, and calls
-   `server.ServeStdio()` which blocks until client disconnects
-4. `cordon_request_access` accepts `file_path` (string, required) and `reason` (string, optional):
-   - Resolve repo root via `reporoot.Find()`
-   - Open policy.db → `ZoneForPath` → error if not in any zone
-   - Issue pass (60m default) via `store.IssuePass`
-   - Audit log via `store.InsertAudit`
-   - Return pass ID and expiry as text
-5. Wire `runMCPServer()` in root.go to call `mcpserver.Run(ctx)`
-
-## Requirement IDs
-
-MCP-01, MCP-03, MCP-05
+- **cli/internal/mcpserver/mcpserver.go** — NEW: stdio MCP server using `mcp-go`. Registers
+  `cordon_request_access` tool — issues a 60-minute pass for a zoned file, audit-logs via
+  `store.InsertAudit`, returns pass ID + expiry as text.
+- **cli/cmd/root.go** — `runMCPServer()` stub replaced with `mcpserver.Run(ctx)`.
+- **cli/go.mod / go.sum** — added `github.com/mark3labs/mcp-go v0.45.0`.
 
 ## Previously Completed
 
@@ -51,9 +32,10 @@ MCP-01, MCP-03, MCP-05
 - **cmd/pass/revoke.go** — `cordon pass revoke`
 - **cmd/init.go** — init with DB migration + codex policy
 
-## Next Steps (after this task)
+## Next Steps
 
-- **HOK-06** — `cordon init` writes `.codex/config.toml`
-- **CLI-03/04** — `cordon login` / `cordon logout`
+- **HOK-06** — `cordon init` writes `.codex/config.toml` with `model_instructions_file`
+- **CLI-03/04** — `cordon login` / `cordon logout` (GitHub OAuth)
 - **CLI-05** — `cordon status`
+- **MCP-03 elicitation** — surface pass requests to the human via VS Code extension
 - **INT-01..06** — `cordon check` integrity verification

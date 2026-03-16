@@ -13,47 +13,79 @@ import (
 )
 
 const (
-	cordonCommand   = "cordon hook"
-	cordonMatcher   = "*"
-	cordonMCPKey    = "cordon"
-	settingsRelPath = ".claude/settings.local.json"
+	cordonCommand      = "cordon hook"
+	cordonMatcher      = "*"
+	cordonMCPKey       = "cordon"
+	cordonMCPToolPerm  = "mcp__cordon__cordon_request_access"
+	settingsRelPath    = ".claude/settings.local.json"
+	mcpRelPath         = ".mcp.json"
 )
 
-// AddCordonEntries writes the Cordon PreToolUse hook and MCP server entries
-// into <repoRoot>/.claude/settings.local.json. The file is created if it does
-// not exist. Existing entries are preserved. The operation is idempotent.
+// AddCordonEntries writes the Cordon PreToolUse hook into
+// <repoRoot>/.claude/settings.local.json and the MCP server entry into
+// <repoRoot>/.mcp.json. Files are created if they do not exist. Existing
+// entries are preserved. The operation is idempotent.
 func AddCordonEntries(repoRoot string) error {
-	path := filepath.Join(repoRoot, settingsRelPath)
-
-	data, err := readSettings(path)
+	// Hook goes in .claude/settings.local.json
+	settingsPath := filepath.Join(repoRoot, settingsRelPath)
+	settingsData, err := readSettings(settingsPath)
 	if err != nil {
 		return err
 	}
+	addHookEntry(settingsData)
+	addEnabledMCPServer(settingsData)
+	addMCPToolPermission(settingsData)
+	// Remove any legacy MCP entry from settings.local.json
+	removeMCPEntry(settingsData)
+	if err := writeAtomic(settingsPath, settingsData); err != nil {
+		return err
+	}
 
-	addHookEntry(data)
-	addMCPEntry(data)
-
-	return writeAtomic(path, data)
+	// MCP server goes in .mcp.json (Claude Code reads MCP configs from here)
+	mcpPath := filepath.Join(repoRoot, mcpRelPath)
+	mcpData, err := readSettings(mcpPath)
+	if err != nil {
+		return err
+	}
+	addMCPEntry(mcpData)
+	return writeAtomic(mcpPath, mcpData)
 }
 
-// RemoveCordonEntries removes the Cordon PreToolUse hook and MCP server entries
-// from <repoRoot>/.claude/settings.local.json. If the file does not exist the
-// function returns nil. All other content is preserved.
+// RemoveCordonEntries removes the Cordon PreToolUse hook from
+// <repoRoot>/.claude/settings.local.json and the MCP server entry from
+// <repoRoot>/.mcp.json. If the files do not exist the function returns nil.
+// All other content is preserved.
 func RemoveCordonEntries(repoRoot string) error {
-	path := filepath.Join(repoRoot, settingsRelPath)
-
-	data, err := readSettings(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
+	// Remove hook from settings.local.json
+	settingsPath := filepath.Join(repoRoot, settingsRelPath)
+	settingsData, err := readSettings(settingsPath)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
+	if settingsData != nil {
+		removeHookEntry(settingsData)
+		removeMCPEntry(settingsData) // clean up any legacy entry too
+		removeEnabledMCPServer(settingsData)
+		removeMCPToolPermission(settingsData)
+		if err := writeAtomic(settingsPath, settingsData); err != nil {
+			return err
+		}
+	}
 
-	removeHookEntry(data)
-	removeMCPEntry(data)
+	// Remove MCP entry from .mcp.json
+	mcpPath := filepath.Join(repoRoot, mcpRelPath)
+	mcpData, err := readSettings(mcpPath)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if mcpData != nil {
+		removeMCPEntry(mcpData)
+		if err := writeAtomic(mcpPath, mcpData); err != nil {
+			return err
+		}
+	}
 
-	return writeAtomic(path, data)
+	return nil
 }
 
 // readSettings reads and unmarshals the settings file into a generic map.
@@ -104,6 +136,7 @@ func addMCPEntry(data map[string]interface{}) {
 		return
 	}
 	servers[cordonMCPKey] = map[string]interface{}{
+		"type":    "stdio",
 		"command": "cordon",
 		"args":    []interface{}{"--mcp"},
 	}
@@ -167,6 +200,93 @@ func removeMCPEntry(data map[string]interface{}) {
 		delete(data, "mcpServers")
 	} else {
 		data["mcpServers"] = servers
+	}
+}
+
+// addEnabledMCPServer adds "cordon" to the enabledMcpjsonServers array,
+// which permits Claude Code to start the MCP server automatically. Idempotent.
+func addEnabledMCPServer(data map[string]interface{}) {
+	enabled := getOrCreateSlice(data, "enabledMcpjsonServers")
+	for _, v := range enabled {
+		if s, ok := v.(string); ok && s == cordonMCPKey {
+			return
+		}
+	}
+	data["enabledMcpjsonServers"] = append(enabled, cordonMCPKey)
+}
+
+// removeEnabledMCPServer removes "cordon" from enabledMcpjsonServers.
+func removeEnabledMCPServer(data map[string]interface{}) {
+	raw, ok := data["enabledMcpjsonServers"]
+	if !ok {
+		return
+	}
+	slice, ok := raw.([]interface{})
+	if !ok {
+		return
+	}
+	filtered := slice[:0]
+	for _, v := range slice {
+		if s, ok := v.(string); ok && s == cordonMCPKey {
+			continue
+		}
+		filtered = append(filtered, v)
+	}
+	if len(filtered) == 0 {
+		delete(data, "enabledMcpjsonServers")
+	} else {
+		data["enabledMcpjsonServers"] = filtered
+	}
+}
+
+// addMCPToolPermission adds the cordon MCP tool to the permissions allow list
+// so agents can invoke it without a manual approval prompt. Idempotent.
+func addMCPToolPermission(data map[string]interface{}) {
+	perms := getOrCreateMap(data, "permissions")
+	allow := getOrCreateSlice(perms, "allow")
+	for _, v := range allow {
+		if s, ok := v.(string); ok && s == cordonMCPToolPerm {
+			return
+		}
+	}
+	perms["allow"] = append(allow, cordonMCPToolPerm)
+	data["permissions"] = perms
+}
+
+// removeMCPToolPermission removes the cordon MCP tool from the permissions allow list.
+func removeMCPToolPermission(data map[string]interface{}) {
+	permsRaw, ok := data["permissions"]
+	if !ok {
+		return
+	}
+	perms, ok := permsRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+	allowRaw, ok := perms["allow"]
+	if !ok {
+		return
+	}
+	allow, ok := allowRaw.([]interface{})
+	if !ok {
+		return
+	}
+	filtered := allow[:0]
+	for _, v := range allow {
+		if s, ok := v.(string); ok && s == cordonMCPToolPerm {
+			continue
+		}
+		filtered = append(filtered, v)
+	}
+	if len(filtered) == 0 {
+		delete(perms, "allow")
+	} else {
+		perms["allow"] = filtered
+	}
+	if len(perms) == 0 {
+		delete(data, "permissions")
+	} else {
+		data["permissions"] = perms
 	}
 }
 

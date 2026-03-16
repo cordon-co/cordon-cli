@@ -61,10 +61,10 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| MCP-01 | `cordon --mcp` runs as a stdio an MCP server (MCP Go - https://github.com/mark3labs/mcp-go) for agent integration | None |
-| MCP-03 | MCP tool: `cordon_request_access` — agent requests a pass, triggers elicitation to the human | None |
+| MCP-01 | `cordon --mcp` runs as a stdio an MCP server (MCP Go - https://github.com/mark3labs/mcp-go) for agent integration | In Progress |
+| MCP-03 | MCP tool: `cordon_request_access` — agent requests a pass, triggers elicitation to the human | In Progress |
 | MCP-04 | `cordon init` adds MCP server entry to `.claude/settings.local.json` with `cordon --mcp` command | In Progress |
-| MCP-05 | MCP reads from the same local policy database as the hook | None |
+| MCP-05 | MCP reads from the same local policy database as the hook | In Progress |
 
 ## Audit & Logging
 

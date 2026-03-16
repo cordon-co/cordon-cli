@@ -2,12 +2,13 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
 	"os"
 
 	"github.com/cordon-co/cordon/cmd/pass"
 	"github.com/cordon-co/cordon/cmd/zone"
 	"github.com/cordon-co/cordon/internal/flags"
+	"github.com/cordon-co/cordon/internal/mcpserver"
 	"github.com/spf13/cobra"
 )
 
@@ -60,13 +61,7 @@ func init() {
 	)
 }
 
-// runMCPServer is a stub for the stdio MCP server.
-// Implementation will use github.com/mark3labs/mcp-go.
+// runMCPServer starts the stdio MCP server and blocks until the client disconnects.
 func runMCPServer() error {
-	if flags.JSON {
-		fmt.Println(`{"error":"not implemented"}`)
-		return nil
-	}
-	fmt.Fprintln(os.Stderr, "not implemented")
-	return nil
+	return mcpserver.Run(context.Background())
 }
