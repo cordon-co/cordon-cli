@@ -91,7 +91,7 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 
 		// Ask the user for confirmation via elicitation.
 		msg := fmt.Sprintf(
-			"Your agent is requesting write access to a file protected by a Cordon zone policy.\n\nFile: %s\nZone: %s",
+			"Your agent is requesting read/write access to a file protected by a Cordon zone policy.\n\nFile: %s\nZone: %s",
 			filePath, zone.Pattern,
 		)
 		if reason != "" {
