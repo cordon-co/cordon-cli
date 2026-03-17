@@ -13,11 +13,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var listAll bool
+
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List active and recent passes",
+	Short: "List active passes",
 	Args:  cobra.NoArgs,
 	RunE:  runPassList,
+}
+
+func init() {
+	listCmd.Flags().BoolVar(&listAll, "all", false, "Include expired and revoked passes")
 }
 
 type passListResult struct {
@@ -53,7 +59,12 @@ func runPassList(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not expire stale passes: %v\n", err)
 	}
 
-	passes, err := store.ListPasses(dataDB)
+	var passes []store.Pass
+	if listAll {
+		passes, err = store.ListAllPasses(dataDB)
+	} else {
+		passes, err = store.ListPasses(dataDB)
+	}
 	if err != nil {
 		return fmt.Errorf("pass list: %w", err)
 	}
@@ -69,26 +80,32 @@ func runPassList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(passes) == 0 {
-		fmt.Println("no passes")
+		if listAll {
+			fmt.Println("no passes")
+		} else {
+			fmt.Println("no active passes")
+		}
 		return nil
 	}
 
-	// Group: active first, then expired/revoked.
-	var active, inactive []store.Pass
-	for _, p := range passes {
-		if p.Status == "active" {
-			active = append(active, p)
-		} else {
-			inactive = append(inactive, p)
+	if listAll {
+		var active, inactive []store.Pass
+		for _, p := range passes {
+			if p.Status == "active" {
+				active = append(active, p)
+			} else {
+				inactive = append(inactive, p)
+			}
 		}
-	}
-
-	printPassTable("ACTIVE", active)
-	if len(inactive) > 0 {
-		if len(active) > 0 {
-			fmt.Println()
+		printPassTable("ACTIVE", active)
+		if len(inactive) > 0 {
+			if len(active) > 0 {
+				fmt.Println()
+			}
+			printPassTable("INACTIVE", inactive)
 		}
-		printPassTable("INACTIVE", inactive)
+	} else {
+		printPassTable("ACTIVE", passes)
 	}
 	return nil
 }

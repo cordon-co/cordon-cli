@@ -47,13 +47,21 @@ func IssuePass(db *sql.DB, p Pass) error {
 	return nil
 }
 
-// ListPasses returns all passes ordered by issued_at descending (most recent first).
+// ListPasses returns active passes ordered by issued_at descending (most recent first).
 func ListPasses(db *sql.DB) ([]Pass, error) {
-	rows, err := db.Query(
-		`SELECT id, zone_id, pattern, file_path, issued_to, issued_by, status,
-		        duration_minutes, issued_at, expires_at, revoked_at, revoked_by
-		 FROM passes ORDER BY issued_at DESC`,
-	)
+	return listPassesWhere(db, `WHERE status = 'active'`)
+}
+
+// ListAllPasses returns all passes (active, expired, revoked) ordered by issued_at descending.
+func ListAllPasses(db *sql.DB) ([]Pass, error) {
+	return listPassesWhere(db, "")
+}
+
+func listPassesWhere(db *sql.DB, where string) ([]Pass, error) {
+	q := `SELECT id, zone_id, pattern, file_path, issued_to, issued_by, status,
+	             duration_minutes, issued_at, expires_at, revoked_at, revoked_by
+	      FROM passes ` + where + ` ORDER BY issued_at DESC`
+	rows, err := db.Query(q)
 	if err != nil {
 		return nil, fmt.Errorf("store: list passes: %w", err)
 	}

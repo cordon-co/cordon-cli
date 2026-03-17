@@ -212,6 +212,26 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker) (
 // detected the command is denied; otherwise it is allowed and logged.
 func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker) (*Event, error) {
 	command := parseBashToolInput(payload.ToolInput)
+
+	// Block agents from running the cordon CLI directly.
+	if isCordonCommand(command) {
+		event := &Event{
+			ToolName:  payload.ToolName,
+			FilePath:  "",
+			ToolInput: payload.ToolInput,
+			Decision:  DecisionDeny,
+			Cwd:       payload.Cwd,
+		}
+		reason := "CORDON POLICY: Agents are not permitted to run the cordon command directly. " +
+			"Only the Cordon MCP can be used to execute cordon commands by agents. " +
+			"Do not attempt to bypass this restriction."
+		if err := encodeClaudeDeny(w, reason); err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(errW, "%s\n", reason)
+		return event, ErrDenied
+	}
+
 	targets := bashWriteTargets(command)
 
 	// No write pattern detected — allow.
@@ -343,19 +363,18 @@ func checkPolicy(checker PolicyChecker, filePath, cwd string) (allowed bool, pas
 
 // policyDenyReason returns the denial reason string for a direct file write.
 func policyDenyReason(path string) string {
-	passCmd := "cordon pass issue --file " + path
 	if path == "" {
 		path = "this file"
-		passCmd = "cordon pass issue --file <filepath>"
 	}
 	return fmt.Sprintf(
 		"CORDON POLICY: %s is protected by a Cordon zone policy. "+
+			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
+			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
-			"This is an enforced policy restriction, not a technical error. "+
-			"If you need to modify this file, request access using the cordon_request_access MCP tool "+
-			"or ask the user to run: %s",
-		path, passCmd,
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"This is an enforced policy restriction, not a technical error. ",
+		path,
 	)
 }
 
@@ -366,18 +385,15 @@ func policyBashDenyReason(primary string, all []string) string {
 	if target == "" {
 		target = "a protected file"
 	}
-	passCmd := "cordon pass issue --file " + primary
-	if primary == "" {
-		passCmd = "cordon pass issue --file <filepath>"
-	}
 	return fmt.Sprintf(
-		"CORDON POLICY: This command would write to %s which is protected by a Cordon zone policy. "+
+		"CORDON POLICY: %s is protected by a Cordon zone policy. "+
+			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
+			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
-			"This is an enforced policy restriction, not a technical error. "+
-			"If you need to modify this file, request access using the cordon_request_access MCP tool "+
-			"or ask the user to run: %s",
-		target, passCmd,
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"This is an enforced policy restriction, not a technical error. ",
+		target,
 	)
 }
 
@@ -413,4 +429,14 @@ func encodeClaudeDeny(w io.Writer, reason string) error {
 // on stdout.
 func writeCopilotDeny(errW io.Writer, reason string) {
 	fmt.Fprintf(errW, "%s\n", reason)
+}
+
+// isCordonCommand returns true if the bash command invokes the cordon CLI.
+// This prevents agents from running cordon commands directly (e.g. cordon pass issue).
+func isCordonCommand(command string) bool {
+	cmd := strings.TrimSpace(command)
+	return cmd == "cordon" || strings.HasPrefix(cmd, "cordon ") ||
+		strings.Contains(cmd, "|cordon ") || strings.Contains(cmd, "| cordon ") ||
+		strings.Contains(cmd, "&& cordon ") || strings.Contains(cmd, "&&cordon ") ||
+		strings.Contains(cmd, "; cordon ") || strings.Contains(cmd, ";cordon ")
 }

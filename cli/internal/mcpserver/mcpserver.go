@@ -91,13 +91,13 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 
 		// Ask the user for confirmation via elicitation.
 		msg := fmt.Sprintf(
-			"An agent is requesting write access to a file protected by a Cordon zone.\n\nFile: %s\nZone pattern: %s\nZone type: %s",
-			filePath, zone.Pattern, zone.ZoneType,
+			"Your agent is requesting write access to a file protected by a Cordon zone policy.\n\nFile: %s\nZone: %s",
+			filePath, zone.Pattern,
 		)
 		if reason != "" {
-			msg += fmt.Sprintf("\nReason: %s", reason)
+			msg += fmt.Sprintf("\nAgent's Reason: %s", reason)
 		}
-		msg += "\n\nGrant a 60-minute access pass?"
+		msg += "\n\nDo you want to grant your agent a 60-minute access pass?"
 
 		elicitResult, err := s.RequestElicitation(ctx, mcp.ElicitationRequest{
 			Params: mcp.ElicitationParams{
@@ -105,13 +105,13 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 				RequestedSchema: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"approve": map[string]interface{}{
+						"Pass Approved": map[string]interface{}{
 							"type":        "boolean",
 							"description": "Grant write access?",
-							"default":     true,
+							"default":     false,
 						},
 					},
-					"required": []string{"approve"},
+					"required": []string{"Pass Approved"},
 				},
 			},
 		})
@@ -130,7 +130,7 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 
 		approved := false
 		if content, ok := elicitResult.Content.(map[string]interface{}); ok {
-			if v, ok := content["approve"].(bool); ok {
+			if v, ok := content["Pass Approved"].(bool); ok {
 				approved = v
 			}
 		}
