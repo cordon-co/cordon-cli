@@ -32,8 +32,9 @@ var hookCmd = &cobra.Command{
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		checker := buildPolicyChecker()
+		rdChecker := buildReadChecker()
 		cmdChecker := buildCommandChecker()
-		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker, cmdChecker)
+		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker, rdChecker, cmdChecker)
 
 		// Log every invocation. Logging failures are non-fatal (fail-open).
 		if event != nil {
@@ -105,6 +106,51 @@ func buildPolicyChecker() hook.PolicyChecker {
 			return false, "" // in zone, no active pass — deny
 		}
 		return true, pass.ID // in zone, active pass — allow
+	}
+}
+
+// buildReadChecker returns a ReadChecker that denies reads of files in zones
+// where prevent_read=true, unless an active pass covers the file.
+//
+// Fails open on any infrastructure error.
+func buildReadChecker() hook.ReadChecker {
+	return func(filePath, cwd string) (allowed bool, passID string) {
+		absRoot, err := resolveRepoRoot(cwd)
+		if err != nil {
+			return true, "" // fail-open
+		}
+
+		policyDB, err := store.OpenPolicyDB(absRoot)
+		if err != nil {
+			return true, "" // fail-open
+		}
+		defer policyDB.Close()
+
+		if err := store.MigratePolicyDB(policyDB); err != nil {
+			return true, "" // fail-open
+		}
+
+		zone, err := store.ZoneForPath(policyDB, filePath, absRoot)
+		if err != nil || zone == nil || !zone.PreventRead {
+			return true, "" // fail-open or not in a prevent-read zone
+		}
+
+		// File is in a prevent-read zone. Check for an active pass.
+		dataDB, err := store.OpenDataDB(absRoot)
+		if err != nil {
+			return false, "" // in zone, data DB unavailable — deny
+		}
+		defer dataDB.Close()
+
+		if err := store.MigrateDataDB(dataDB); err != nil {
+			return false, "" // in zone, data DB unavailable — deny
+		}
+
+		pass, err := store.ActivePassForPath(dataDB, filePath, absRoot)
+		if err != nil || pass == nil {
+			return false, "" // in zone, no active pass — deny
+		}
+		return true, pass.ID
 	}
 }
 

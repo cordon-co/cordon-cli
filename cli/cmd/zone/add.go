@@ -12,7 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var guardian bool
+var (
+	guardian    bool
+	preventRead bool
+)
 
 var addCmd = &cobra.Command{
 	Use:   "add <pattern>",
@@ -24,6 +27,7 @@ var addCmd = &cobra.Command{
 
 func init() {
 	addCmd.Flags().BoolVar(&guardian, "guardian", false, "Create a guardian zone (requires guardian/admin role)")
+	addCmd.Flags().BoolVar(&preventRead, "prevent-read", false, "Also block agent read access (e.g. for credential files)")
 }
 
 type zoneAddResult struct {
@@ -68,7 +72,7 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 	// Glob patterns and already-relative patterns are unchanged.
 	pattern = store.NormalizePattern(pattern, absRoot)
 
-	z, err := store.AddZone(policyDB, pattern, zoneType, user)
+	z, err := store.AddZone(policyDB, pattern, zoneType, user, preventRead)
 	if err != nil {
 		return fmt.Errorf("zone add: %w", err)
 	}
@@ -106,12 +110,14 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	zoneLabel := z.ZoneType
+	zoneLabel := "standard zone"
 	if z.ZoneType == "guardian" {
 		zoneLabel = "guardian zone"
-	} else {
-		zoneLabel = "standard zone"
 	}
-	fmt.Printf("added %s: %s\n", zoneLabel, z.Pattern)
+	readLabel := ""
+	if z.PreventRead {
+		readLabel = " (read+write)"
+	}
+	fmt.Printf("added %s%s: %s\n", zoneLabel, readLabel, z.Pattern)
 	return nil
 }

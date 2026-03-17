@@ -137,12 +137,13 @@ func shortenHome(path, homeDir string) string {
 }
 
 // promptAndAddGuardrails offers the user the standard set of guardrails.
-// Rules that already exist are skipped (idempotent). If the user declines, nothing
-// is added. The prompt defaults to yes.
+// Rules and zones that already exist are skipped (idempotent). If the user
+// declines, nothing is added. The prompt defaults to yes.
 func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Add standard guardrails? These include sensible defaults for common")
-	fmt.Fprintln(cmd.OutOrStdout(), "footguns like 'git reset --hard', 'rm -rf' and .env file exposures for agents.")
+	fmt.Fprintln(cmd.OutOrStdout(), "footguns like 'git reset --hard', 'rm -rf', and credential file protection")
+	fmt.Fprintln(cmd.OutOrStdout(), "(.env, credentials.json, *.pem, etc. — blocked for both read and write).")
 	fmt.Fprint(cmd.OutOrStdout(), "Add guardrails? [Y/n]: ")
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -157,14 +158,25 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 
 	user := store.CurrentOSUser()
 	added := 0
+
 	for _, r := range store.StandardGuardrails {
 		_, err := store.AddRule(policyDB, r.Pattern, r.Reason, user)
 		if err != nil {
-			// Skip duplicates (UNIQUE constraint) — safe to re-run init.
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue
 			}
-			return fmt.Errorf("add guardrail %q: %w", r.Pattern, err)
+			return fmt.Errorf("add guardrail rule %q: %w", r.Pattern, err)
+		}
+		added++
+	}
+
+	for _, z := range store.StandardGuardrailZones {
+		_, err := store.AddZone(policyDB, z.Pattern, "standard", user, z.PreventRead)
+		if err != nil {
+			if strings.Contains(err.Error(), "UNIQUE") {
+				continue
+			}
+			return fmt.Errorf("add guardrail zone %q: %w", z.Pattern, err)
 		}
 		added++
 	}

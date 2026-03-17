@@ -11,17 +11,20 @@ import (
 
 // Zone is a protected file, folder, or glob pattern stored in policy.db.
 type Zone struct {
-	ID        string
-	Pattern   string
-	ZoneType  string // "standard" or "guardian"
-	CreatedBy string
-	CreatedAt string // ISO 8601
-	UpdatedAt string // ISO 8601
+	ID           string
+	Pattern      string
+	ZoneType     string // "standard" or "guardian"
+	PreventWrite bool   // always true for now
+	PreventRead  bool   // opt-in via --prevent-read
+	CreatedBy    string
+	CreatedAt    string // ISO 8601
+	UpdatedAt    string // ISO 8601
 }
 
 // AddZone inserts a new zone into the policy database.
+// preventRead enables read enforcement in addition to the always-on write enforcement.
 // Returns an error if the pattern already exists (UNIQUE constraint violation).
-func AddZone(db *sql.DB, pattern, zoneType, createdBy string) (*Zone, error) {
+func AddZone(db *sql.DB, pattern, zoneType, createdBy string, preventRead bool) (*Zone, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	id, err := newUUID()
 	if err != nil {
@@ -29,18 +32,26 @@ func AddZone(db *sql.DB, pattern, zoneType, createdBy string) (*Zone, error) {
 	}
 
 	z := Zone{
-		ID:        id,
-		Pattern:   pattern,
-		ZoneType:  zoneType,
-		CreatedBy: createdBy,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           id,
+		Pattern:      pattern,
+		ZoneType:     zoneType,
+		PreventWrite: true,
+		PreventRead:  preventRead,
+		CreatedBy:    createdBy,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	pw := 1
+	pr := 0
+	if preventRead {
+		pr = 1
 	}
 
 	_, err = db.Exec(
-		`INSERT INTO zones (id, pattern, zone_type, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		z.ID, z.Pattern, z.ZoneType, z.CreatedBy, z.CreatedAt, z.UpdatedAt,
+		`INSERT INTO zones (id, pattern, zone_type, prevent_write, prevent_read, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		z.ID, z.Pattern, z.ZoneType, pw, pr, z.CreatedBy, z.CreatedAt, z.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: add zone: %w", err)
@@ -51,7 +62,7 @@ func AddZone(db *sql.DB, pattern, zoneType, createdBy string) (*Zone, error) {
 // ListZones returns all zones ordered by creation time.
 func ListZones(db *sql.DB) ([]Zone, error) {
 	rows, err := db.Query(
-		`SELECT id, pattern, zone_type, created_by, created_at, updated_at
+		`SELECT id, pattern, zone_type, prevent_write, prevent_read, created_by, created_at, updated_at
 		 FROM zones ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -62,9 +73,12 @@ func ListZones(db *sql.DB) ([]Zone, error) {
 	var zones []Zone
 	for rows.Next() {
 		var z Zone
-		if err := rows.Scan(&z.ID, &z.Pattern, &z.ZoneType, &z.CreatedBy, &z.CreatedAt, &z.UpdatedAt); err != nil {
+		var pw, pr int
+		if err := rows.Scan(&z.ID, &z.Pattern, &z.ZoneType, &pw, &pr, &z.CreatedBy, &z.CreatedAt, &z.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("store: scan zone: %w", err)
 		}
+		z.PreventWrite = pw != 0
+		z.PreventRead = pr != 0
 		zones = append(zones, z)
 	}
 	return zones, rows.Err()
@@ -120,6 +134,29 @@ func NormalizePattern(pattern, repoRoot string) string {
 		return pattern // outside repo — keep absolute
 	}
 	return rel
+}
+
+// StandardGuardrailZones is the default set of guardrail zones offered during
+// `cordon init`. All are seeded with prevent_read=true so agents cannot read
+// credential files into their context. They are stored as normal zones in
+// policy.db, so they appear in `cordon zone list` and can be removed if desired.
+var StandardGuardrailZones = []struct {
+	Pattern     string
+	PreventRead bool
+}{
+	// Environment / secrets files
+	{".env", true},
+	{".env.*", true},
+	{".envrc", true},
+	// Cloud / service credentials
+	{"credentials.json", true},
+	{"secrets.json", true},
+	{"service-account.json", true},
+	// Certificates and private keys
+	{"*.pem", true},
+	{"*.key", true},
+	{"*.p12", true},
+	{"*.pfx", true},
 }
 
 // newUUID generates a random UUID v4 string without external dependencies.

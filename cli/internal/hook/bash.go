@@ -119,6 +119,73 @@ func reSedInPlaceTargets(command string) []string {
 	return nil
 }
 
+// bashReadTargets parses a bash command string and returns file paths that the
+// command would read. Only simple, unambiguous read patterns are detected;
+// the goal is defence-in-depth for prevent-read zones (the Read tool block
+// is the primary enforcement path).
+//
+// Recognised patterns:
+//
+//	cat file [file…]
+//	head [-n N] file
+//	tail [-n N] file
+//	less file
+//	more file
+func bashReadTargets(command string) []string {
+	seen := map[string]bool{}
+	var targets []string
+
+	add := func(path string) {
+		path = strings.Trim(strings.TrimSpace(path), `'"`)
+		if path == "" || seen[path] || strings.HasPrefix(path, "-") {
+			return
+		}
+		seen[path] = true
+		targets = append(targets, path)
+	}
+
+	tokens := strings.Fields(command)
+	for i, tok := range tokens {
+		switch tok {
+		case "cat":
+			// cat [options] file… — collect all non-flag tokens after cat
+			for _, t := range tokens[i+1:] {
+				if strings.HasPrefix(t, "-") {
+					continue
+				}
+				add(t)
+			}
+		case "head", "tail":
+			// head/tail [-n N | -N] file
+			j := i + 1
+			for j < len(tokens) {
+				t := tokens[j]
+				if t == "-n" {
+					j += 2 // skip flag and its value
+					continue
+				}
+				if strings.HasPrefix(t, "-") {
+					j++
+					continue
+				}
+				add(t)
+				break
+			}
+		case "less", "more":
+			// less/more [options] file
+			for _, t := range tokens[i+1:] {
+				if strings.HasPrefix(t, "-") {
+					continue
+				}
+				add(t)
+				break
+			}
+		}
+	}
+
+	return targets
+}
+
 // parseBashToolInput extracts the command string from a Bash tool_input JSON blob.
 // Returns empty string if the field is missing or the JSON is malformed.
 func parseBashToolInput(raw json.RawMessage) string {

@@ -50,6 +50,16 @@ type Event struct {
 	Cwd       string // cwd from the hook payload; used by the logger for DB path discovery
 }
 
+// ReadChecker checks whether a read of filePath from a prevent-read zone
+// should be allowed. The signature is identical to PolicyChecker.
+//
+// Return values:
+//   - allowed=true  — file is not in a prevent-read zone, or a pass is active
+//   - allowed=false — file is in a prevent-read zone with no active pass
+//
+// A nil ReadChecker allows all reads (fail-open).
+type ReadChecker func(filePath, cwd string) (allowed bool, passID string)
+
 // writingTools is the set of tool names that constitute write operations and
 // are subject to zone enforcement. Non-writing tools are always allowed but
 // still logged.
@@ -75,6 +85,18 @@ var writingTools = map[string]bool{
 	"renameFile":      true,
 }
 
+// readingTools is the set of tool names that read file content and are subject
+// to prevent-read zone enforcement. Bash read commands are handled separately
+// in evaluateBash via bashReadTargets.
+var readingTools = map[string]bool{
+	// Claude Code
+	"Read":         true,
+	"NotebookRead": true,
+	"Grep":         true,
+	// VS Code Copilot
+	"read_file": true,
+}
+
 // copilotTools identifies tools that originate from VS Code Copilot.
 // When denying these tools the response format differs from Claude Code.
 var copilotTools = map[string]bool{
@@ -88,6 +110,7 @@ var copilotTools = map[string]bool{
 	"deleteFile":      true,
 	"moveFile":        true,
 	"renameFile":      true,
+	"read_file":       true,
 }
 
 // hookPayload is the JSON structure sent by Claude Code via stdin.
@@ -102,16 +125,20 @@ type hookPayload struct {
 // toolInputPath extracts the file path from a tool's input JSON.
 // Different agents use different field names for the target file path.
 type toolInputPath struct {
-	FilePath    string `json:"file_path"`    // Claude Code (Write, Edit, etc.)
-	Path        string `json:"path"`         // generic fallback
-	Filename    string `json:"filename"`     // VS Code Copilot (create_file, etc.)
-	Destination string `json:"destination"`  // VS Code Copilot (moveFile, renameFile)
-	NewPath     string `json:"newPath"`      // VS Code Copilot (renameFile variant)
+	FilePath     string `json:"file_path"`   // Claude Code (Write, Edit, etc.)
+	FilePathCC   string `json:"filePath"`    // VS Code Copilot (read_file, etc.)
+	Path         string `json:"path"`        // generic fallback
+	Filename     string `json:"filename"`    // VS Code Copilot (create_file, etc.)
+	Destination  string `json:"destination"` // VS Code Copilot (moveFile, renameFile)
+	NewPath      string `json:"newPath"`     // VS Code Copilot (renameFile variant)
 }
 
 func (t toolInputPath) effectivePath() string {
 	if t.FilePath != "" {
 		return t.FilePath
+	}
+	if t.FilePathCC != "" {
+		return t.FilePathCC
 	}
 	if t.Path != "" {
 		return t.Path
@@ -134,6 +161,9 @@ func (t toolInputPath) effectivePath() string {
 // checker is consulted for every writing tool. Pass nil to allow all writes
 // (fail-open behaviour, used when databases are unavailable).
 //
+// rdChecker is consulted for reading tools (Read, NotebookRead, Grep) and Bash
+// read commands. Pass nil to allow all reads (fail-open).
+//
 // cmdChecker is consulted for Bash tool invocations. Pass nil to allow all
 // commands (fail-open). Built-in rules are always checked regardless.
 //
@@ -143,7 +173,7 @@ func (t toolInputPath) effectivePath() string {
 //   - nil, other error      → malformed payload or IO error; caller should exit 1
 //
 // Evaluate never calls os.Exit itself, making it fully testable.
-func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, cmdChecker CommandChecker) (*Event, error) {
+func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, rdChecker ReadChecker, cmdChecker CommandChecker) (*Event, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("hook: read stdin: %w", err)
@@ -156,7 +186,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, c
 
 	// Bash tool: check whether the command targets any files via shell write patterns.
 	if payload.ToolName == "Bash" {
-		return evaluateBash(payload, w, errW, checker, cmdChecker)
+		return evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker)
 	}
 
 	// apply_patch: file paths are embedded in the patch body, potentially multiple.
@@ -171,6 +201,31 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, c
 		_ = json.Unmarshal([]byte(payload.ToolInput), &inp)
 	}
 	filePath := inp.effectivePath()
+
+	// Reading tools: check against prevent-read zones.
+	if readingTools[payload.ToolName] {
+		allowed, _ := checkRead(rdChecker, filePath, payload.Cwd)
+		if !allowed {
+			event := &Event{
+				ToolName:  payload.ToolName,
+				FilePath:  filePath,
+				ToolInput: payload.ToolInput,
+				Decision:  DecisionDeny,
+				Cwd:       payload.Cwd,
+			}
+			if err := writeDeny(w, errW, payload.ToolName, filePath); err != nil {
+				return nil, err
+			}
+			return event, ErrDenied
+		}
+		return &Event{
+			ToolName:  payload.ToolName,
+			FilePath:  filePath,
+			ToolInput: payload.ToolInput,
+			Decision:  DecisionAllow,
+			Cwd:       payload.Cwd,
+		}, nil
+	}
 
 	// Non-writing tools: allow and log; no deny response.
 	if !writingTools[payload.ToolName] {
@@ -213,7 +268,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, c
 // evaluateBash handles the Bash tool. It parses the command string for shell
 // write patterns (redirections, tee, sed -i, cp, mv). If any write target is
 // detected the command is denied; otherwise it is allowed and logged.
-func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker, cmdChecker CommandChecker) (*Event, error) {
+func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker, rdChecker ReadChecker, cmdChecker CommandChecker) (*Event, error) {
 	command := parseBashToolInput(payload.ToolInput)
 
 	// Check each segment of the command against built-in and custom command rules.
@@ -251,6 +306,27 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 				fmt.Fprintf(errW, "%s\n", reason)
 				return event, ErrDenied
 			}
+		}
+	}
+
+	// Check read targets against prevent-read zones.
+	readTargets := bashReadTargets(command)
+	for _, target := range readTargets {
+		allowed, _ := checkRead(rdChecker, target, payload.Cwd)
+		if !allowed {
+			event := &Event{
+				ToolName:  payload.ToolName,
+				FilePath:  target,
+				ToolInput: payload.ToolInput,
+				Decision:  DecisionDeny,
+				Cwd:       payload.Cwd,
+			}
+			reason := readDenyReason(target)
+			if err := encodeClaudeDeny(w, reason); err != nil {
+				return nil, err
+			}
+			fmt.Fprintf(errW, "%s\n", reason)
+			return event, ErrDenied
 		}
 	}
 
@@ -383,6 +459,30 @@ func checkPolicy(checker PolicyChecker, filePath, cwd string) (allowed bool, pas
 	return checker(filePath, cwd)
 }
 
+// checkRead calls the ReadChecker if non-nil, returning (true, "") as the
+// fail-open default when rdChecker is nil.
+func checkRead(rdChecker ReadChecker, filePath, cwd string) (allowed bool, passID string) {
+	if rdChecker == nil {
+		return true, ""
+	}
+	return rdChecker(filePath, cwd)
+}
+
+// readDenyReason returns the denial reason string when a read is blocked by a
+// prevent-read zone.
+func readDenyReason(path string) string {
+	if path == "" {
+		path = "this file"
+	}
+	return fmt.Sprintf(
+		"CORDON POLICY: %s is protected by a Cordon zone policy that prevents agent read access. "+
+			"This file may contain credentials or secrets. "+
+			"Do not attempt to read this file through any method, including shell commands such as cat, head, tail, less, or grep. "+
+			"This is an enforced policy restriction, not a technical error.",
+		path,
+	)
+}
+
 // policyDenyReason returns the denial reason string for a direct file write.
 func policyDenyReason(path string) string {
 	if path == "" {
@@ -420,7 +520,12 @@ func policyBashDenyReason(primary string, all []string) string {
 }
 
 func writeDeny(w io.Writer, errW io.Writer, toolName, path string) error {
-	reason := policyDenyReason(path)
+	var reason string
+	if readingTools[toolName] {
+		reason = readDenyReason(path)
+	} else {
+		reason = policyDenyReason(path)
+	}
 	if err := encodeClaudeDeny(w, reason); err != nil {
 		return err
 	}

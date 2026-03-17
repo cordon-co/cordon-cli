@@ -1,6 +1,9 @@
 package store
 
-import "database/sql"
+import (
+	"database/sql"
+	"strings"
+)
 
 // MigratePolicyDB creates all tables and indexes in the policy database if
 // they do not exist. Safe to call on every open — all statements are idempotent.
@@ -8,19 +11,23 @@ func MigratePolicyDB(db *sql.DB) error {
 	stmts := []string{
 		// zones — one row per protected file, folder, or glob pattern.
 		//
-		// id:         UUID v4 (hex string).
-		// pattern:    file path, directory path, or glob pattern.
-		// zone_type:  'standard' (any member) or 'guardian' (guardian/admin only).
-		// created_by: user identifier (github username or OS username for local users).
-		// created_at: ISO 8601 timestamp.
-		// updated_at: ISO 8601 timestamp.
+		// id:            UUID v4 (hex string).
+		// pattern:       file path, directory path, or glob pattern.
+		// zone_type:     'standard' (any member) or 'guardian' (guardian/admin only).
+		// prevent_write: 1 = block agent write tools (always true for now).
+		// prevent_read:  1 = also block agent read tools (opt-in via --prevent-read).
+		// created_by:    user identifier (github username or OS username for local users).
+		// created_at:    ISO 8601 timestamp.
+		// updated_at:    ISO 8601 timestamp.
 		`CREATE TABLE IF NOT EXISTS zones (
-			id         TEXT PRIMARY KEY,
-			pattern    TEXT NOT NULL,
-			zone_type  TEXT NOT NULL DEFAULT 'standard' CHECK(zone_type IN ('standard','guardian')),
-			created_by TEXT NOT NULL DEFAULT '',
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			id             TEXT    PRIMARY KEY,
+			pattern        TEXT    NOT NULL,
+			zone_type      TEXT    NOT NULL DEFAULT 'standard' CHECK(zone_type IN ('standard','guardian')),
+			prevent_write  INTEGER NOT NULL DEFAULT 1,
+			prevent_read   INTEGER NOT NULL DEFAULT 0,
+			created_by     TEXT    NOT NULL DEFAULT '',
+			created_at     TEXT    NOT NULL,
+			updated_at     TEXT    NOT NULL
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_pattern ON zones(pattern)`,
 
@@ -49,7 +56,40 @@ func MigratePolicyDB(db *sql.DB) error {
 			return err
 		}
 	}
+
+	// Add new columns to pre-existing databases. Each ALTER is attempted
+	// individually; "duplicate column name" means the column already exists,
+	// which is fine — we ignore it.
+	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN prevent_write INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN prevent_read INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// addColumnIfMissing executes an ALTER TABLE … ADD COLUMN statement and
+// silently ignores the error if the column already exists.
+func addColumnIfMissing(db *sql.DB, stmt string) error {
+	_, err := db.Exec(stmt)
+	if err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	return nil
+}
+
+// isDuplicateColumnError reports whether err is the SQLite "duplicate column
+// name" error produced when trying to ADD COLUMN on a column that already
+// exists. We match on the error string because database/sql does not expose
+// SQLite error codes directly.
+func isDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate column name") || strings.Contains(msg, "already exists")
 }
 
 // MigrateDataDB creates all tables and indexes in the data database if they

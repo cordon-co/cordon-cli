@@ -32,6 +32,7 @@
 | ZON-04 | `cordon zone remove <file\|folder\|glob>` removes a zone (guardian zones require guardian/admin role) | Done |
 | ZON-05 | Zones stored in `.cordon/policy.db` (SQLite) for unauthenticated users | Done |
 | ZON-06 | Zones cached in `~/.cordon/repos/<repo-hash>/policy-cache.db` for authenticated users, synced from cloud | None |
+| ZON-07 | `cordon zone add --prevent-read` also blocks agent read access (Read, Grep, Bash cat/head/tail/etc.) for credential and secret files | Done |
 
 ## Command Rule Management
 
@@ -121,7 +122,7 @@
 | # | Requirement | Progress |
 |---|-------------|--------|
 | SAF-01 | Built-in hook rule: block destructive commands (git reset --hard, git push --force, rm -rf) | In Progress |
-| SAF-02 | Built-in hook rule: block writes to files containing detected credential patterns | None |
+| SAF-02 | Standard guardrail zones for credential files (.env, credentials.json, *.pem, etc.) seeded on `cordon init` with read+write prevention | In Progress |
 | SAF-03 | Built-in hook rule: block modifications to CI/CD config files (.github/workflows/) | None |
 | SAF-04 | Safety hooks configurable per-repo (enable/disable individual rules) | None |
 | SAF-05 | Safety hooks managed through the same `cordon hook` binary (no separate scripts) | None |
