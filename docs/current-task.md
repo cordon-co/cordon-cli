@@ -2,7 +2,70 @@
 
 ## Summary
 
-Completed: **Command Rules** — policy-based enforcement of shell commands (CMD-01 through CMD-06, SAF-01 in progress).
+Next: **Zone Read Prevention + Guardrail Zones** — add `prevent_read`/`prevent_write` columns to zones, hook enforcement for read tools, `--prevent-read` flag on `cordon zone add`, and standard guardrail zones seeded on `cordon init` (ZON-07 new, SAF-02 partial).
+
+Previously completed: **Command Rules** — policy-based enforcement of shell commands (CMD-01 through CMD-06, SAF-01 in progress).
+
+## Strategy: Zone Read Prevention + Guardrail Zones
+
+### Problem
+
+Zones currently only prevent **writes**. There is no way to prevent agents from **reading** sensitive files (e.g. `.env`, `credentials.json`) into their context. Additionally, `cordon init` offers guardrail command rules but no guardrail zones — users have to manually add zones for obvious secrets files.
+
+### Design
+
+**Two new boolean columns on `zones`:**
+
+| Column | Default | Meaning |
+|--------|---------|---------|
+| `prevent_write` | `1` (true) | Blocks write tools (existing behaviour, now explicit) |
+| `prevent_read` | `0` (false) | Also blocks read tools when enabled |
+
+`prevent_write` is always true for now. `--prevent-read` sets both to true when adding a zone.
+
+**Hook read enforcement:**
+
+A new `ReadChecker` type (same signature as `PolicyChecker`) is consulted for "reading tools":
+- `Read`, `NotebookRead`, `Grep` (Claude Code)
+- Basic Bash read commands: `cat`, `head`, `tail`, `less`, `more`
+
+If a file is in a zone with `prevent_read=true` and no active pass exists, the read is denied with an appropriate reason message.
+
+**Standard guardrail zones (added on `cordon init` alongside command rules):**
+
+| Pattern | Reason |
+|---------|--------|
+| `.env` | Credential exposure |
+| `.env.*` | Credential exposure (.env.local, .env.production, etc.) |
+| `.envrc` | Credential exposure (direnv) |
+| `credentials.json` | Credential exposure |
+| `secrets.json` | Credential exposure |
+| `service-account.json` | Credential exposure |
+| `*.pem` | Private key / certificate |
+| `*.key` | Private key |
+| `*.p12` | PKCS#12 certificate |
+| `*.pfx` | PKCS#12 certificate |
+
+All seeded with `prevent_read=true` (and `prevent_write=true` implicitly).
+
+### Key Files
+
+- **cli/internal/store/schema.go** — add `prevent_write`, `prevent_read` to `zones` CREATE + ALTER TABLE migration
+- **cli/internal/store/policy.go** — add fields to `Zone` struct; update `AddZone` signature; update scan in `ListZones`
+- **cli/internal/hook/hook.go** — add `ReadChecker` type; add `readingTools` map; extend `Evaluate` to check reads; add `bashReadTargets` and check against `ReadChecker` in `evaluateBash`
+- **cli/cmd/hook.go** — add `buildReadChecker()`; pass to `Evaluate`
+- **cli/cmd/zone/add.go** — add `--prevent-read` flag
+- **cli/cmd/zone/list.go** — display `prevent_read` column
+- **cli/internal/store/rules.go** (or policy.go) — add `StandardGuardrailZones`
+- **cli/cmd/init.go** — `promptAndAddGuardrails` also seeds guardrail zones
+- **docs/requirements.md** — add ZON-07; update SAF-02
+
+### Requirement IDs
+
+- **ZON-07** (new) — Zones support `--prevent-read` to block agent read access to sensitive files
+- **SAF-02** (partial) — Standard guardrail zones for credential files seeded on `cordon init`
+
+---
 
 ## Strategy: Command Rules
 
