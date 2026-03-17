@@ -148,8 +148,11 @@ func bashReadTargets(command string) []string {
 	for i, tok := range tokens {
 		switch tok {
 		case "cat":
-			// cat [options] file… — collect all non-flag tokens after cat
+			// cat [options] file… — collect non-flag tokens until a shell delimiter
 			for _, t := range tokens[i+1:] {
+				if isShellDelimiter(t) {
+					break
+				}
 				if strings.HasPrefix(t, "-") {
 					continue
 				}
@@ -184,6 +187,17 @@ func bashReadTargets(command string) []string {
 	}
 
 	return targets
+}
+
+// isShellDelimiter reports whether token is a shell operator that separates
+// commands (|, ||, &&, ;). Used to stop collecting file arguments for a
+// command when the rest of the token stream belongs to a different command.
+func isShellDelimiter(token string) bool {
+	switch token {
+	case "|", "||", "&&", ";":
+		return true
+	}
+	return false
 }
 
 // parseBashToolInput extracts the command string from a Bash tool_input JSON blob.

@@ -475,10 +475,13 @@ func readDenyReason(path string) string {
 		path = "this file"
 	}
 	return fmt.Sprintf(
-		"CORDON POLICY: %s is protected by a Cordon zone policy that prevents agent read access. "+
-			"This file may contain credentials or secrets. "+
-			"Do not attempt to read this file through any method, including shell commands such as cat, head, tail, less, or grep. "+
-			"This is an enforced policy restriction, not a technical error.",
+		"CORDON POLICY: %s is protected by a Cordon zone policy. "+
+			"To request read access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
+			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
+			"Do not attempt to read this file through any alternative method, "+
+			"including shell commands such as cat, tail, head, less, or grep. "+
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"This is an enforced policy restriction, not a technical error. ",
 		path,
 	)
 }
@@ -537,7 +540,11 @@ func writeDeny(w io.Writer, errW io.Writer, toolName, path string) error {
 
 func writeBashDeny(w io.Writer, errW io.Writer, primary string, all []string) error {
 	reason := policyBashDenyReason(primary, all)
-	return encodeClaudeDeny(w, reason)
+	if err := encodeClaudeDeny(w, reason); err != nil {
+		return err
+	}
+	fmt.Fprintf(errW, "%s\n", reason)
+	return nil
 }
 
 // encodeClaudeDeny writes the Claude Code JSON deny response to stdout.

@@ -42,16 +42,10 @@ func AddZone(db *sql.DB, pattern, zoneType, createdBy string, preventRead bool) 
 		UpdatedAt:    now,
 	}
 
-	pw := 1
-	pr := 0
-	if preventRead {
-		pr = 1
-	}
-
 	_, err = db.Exec(
 		`INSERT INTO zones (id, pattern, zone_type, prevent_write, prevent_read, created_by, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		z.ID, z.Pattern, z.ZoneType, pw, pr, z.CreatedBy, z.CreatedAt, z.UpdatedAt,
+		z.ID, z.Pattern, z.ZoneType, z.PreventWrite, z.PreventRead, z.CreatedBy, z.CreatedAt, z.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: add zone: %w", err)
