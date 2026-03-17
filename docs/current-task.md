@@ -2,7 +2,7 @@
 
 ## Summary
 
-Designing and implementing **Command Rules** — policy-based enforcement of shell commands alongside the existing file-based Zone enforcement.
+Completed: **Command Rules** — policy-based enforcement of shell commands (CMD-01 through CMD-06, SAF-01 in progress).
 
 ## Strategy: Command Rules
 
@@ -137,6 +137,19 @@ This is an enforced policy restriction, not a technical error.
 
 ## Last Completed
 
+- **cli/internal/store/schema.go** — `command_rules` table added to `MigratePolicyDB`
+- **cli/internal/store/rules.go** — NEW: `CommandRule` struct, `AddRule`, `ListRules`, `RemoveRule`, `MatchCommandRule`
+- **cli/internal/hook/commandrule.go** — NEW: `CommandChecker` type, `MatchedRule`, built-in rules, `CheckBuiltinRules`, `BuiltinRulesAsStore`, `splitCompoundCommand`, `commandRuleDenyReason`
+- **cli/internal/hook/hook.go** — `Evaluate` takes `CommandChecker`; `evaluateBash` uses splitter + built-in + custom rule checks; `isCordonCommand` removed
+- **cli/cmd/hook.go** — `buildCommandChecker` added and wired into `Evaluate`
+- **cli/cmd/rule/rule.go** — NEW: `cordon rule` parent command
+- **cli/cmd/rule/add.go** — NEW: `cordon rule add <pattern> [--reason] [--severity]`
+- **cli/cmd/rule/list.go** — NEW: `cordon rule list` (built-in + custom)
+- **cli/cmd/rule/remove.go** — NEW: `cordon rule remove <pattern>`
+- **cli/cmd/root.go** — `rule.Cmd` registered
+
+## Previously Completed
+
 - MCP elicitation with "Pass Approved" field naming
 - Copilot hook support (.github/hooks/cordon.json, .vscode/mcp.json)
 - Copilot deny message format (stderr for Copilot agents)
@@ -164,7 +177,7 @@ This is an enforced policy restriction, not a technical error.
 
 ## Next Steps
 
-1. Implement command rules (this task)
+1. **SAF-01 (remaining)** — add destructive command built-in rules (`git reset --hard*`, `git push --force*`, `rm -rf /*`)
 2. **HOK-06** — `cordon init` writes `.codex/config.toml`
 3. **CLI-03/04** — `cordon login` / `cordon logout`
 4. **CLI-05** — `cordon status`

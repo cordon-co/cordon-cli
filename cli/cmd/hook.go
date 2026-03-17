@@ -32,7 +32,8 @@ var hookCmd = &cobra.Command{
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		checker := buildPolicyChecker()
-		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker)
+		cmdChecker := buildCommandChecker()
+		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker, cmdChecker)
 
 		// Log every invocation. Logging failures are non-fatal (fail-open).
 		if event != nil {
@@ -104,6 +105,41 @@ func buildPolicyChecker() hook.PolicyChecker {
 			return false, "" // in zone, no active pass — deny
 		}
 		return true, pass.ID // in zone, active pass — allow
+	}
+}
+
+// buildCommandChecker returns a CommandChecker that checks custom command rules
+// from the policy database. Built-in rules are always checked first within
+// hook.evaluateBash itself, so this checker only needs to handle custom rules.
+//
+// Fails open on any infrastructure error.
+func buildCommandChecker() hook.CommandChecker {
+	return func(command, cwd string) (allowed bool, matched *hook.MatchedRule) {
+		absRoot, err := resolveRepoRoot(cwd)
+		if err != nil {
+			return true, nil // fail-open
+		}
+
+		policyDB, err := store.OpenPolicyDB(absRoot)
+		if err != nil {
+			return true, nil // fail-open
+		}
+		defer policyDB.Close()
+
+		if err := store.MigratePolicyDB(policyDB); err != nil {
+			return true, nil // fail-open
+		}
+
+		rule, err := store.MatchCommandRule(policyDB, command)
+		if err != nil || rule == nil {
+			return true, nil // fail-open or no match
+		}
+
+		return false, &hook.MatchedRule{
+			Pattern:  rule.Pattern,
+			RuleType: rule.RuleType,
+			Reason:   rule.Reason,
+		}
 	}
 }
 

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bufio"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -82,6 +84,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("init: update settings.local.json: %w", err)
 	}
 
+	// Standard guardrails — prompt user to opt in (skip in --json mode).
+	if !flags.JSON {
+		if err := promptAndAddGuardrails(cmd, policyDB); err != nil {
+			return fmt.Errorf("init: guardrails: %w", err)
+		}
+	}
+
 	// .cordon/codex-policy.md — generate from current zone list (may be empty on first init).
 	zones, err := store.ListZones(policyDB)
 	if err != nil {
@@ -126,3 +135,45 @@ func shortenHome(path, homeDir string) string {
 	}
 	return filepath.Join("~", rel)
 }
+
+// promptAndAddGuardrails offers the user the standard set of guardrails.
+// Rules that already exist are skipped (idempotent). If the user declines, nothing
+// is added. The prompt defaults to yes.
+func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Add standard guardrails? These include sensible defaults for common")
+	fmt.Fprintln(cmd.OutOrStdout(), "footguns like 'git reset --hard', 'rm -rf' and .env file exposures for agents.")
+	fmt.Fprint(cmd.OutOrStdout(), "Add guardrails? [Y/n]: ")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	answer := strings.TrimSpace(scanner.Text())
+
+	// Default to yes on empty input.
+	if answer != "" && strings.ToLower(answer) != "y" && strings.ToLower(answer) != "yes" {
+		fmt.Fprintln(cmd.OutOrStdout(), "  skipped.")
+		return nil
+	}
+
+	user := store.CurrentOSUser()
+	added := 0
+	for _, r := range store.StandardGuardrails {
+		_, err := store.AddRule(policyDB, r.Pattern, r.Reason, user)
+		if err != nil {
+			// Skip duplicates (UNIQUE constraint) — safe to re-run init.
+			if strings.Contains(err.Error(), "UNIQUE") {
+				continue
+			}
+			return fmt.Errorf("add guardrail %q: %w", r.Pattern, err)
+		}
+		added++
+	}
+
+	if added > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  added %d guardrail(s).\n", added)
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), "  already configured.")
+	}
+	return nil
+}
+

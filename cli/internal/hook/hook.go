@@ -134,13 +134,16 @@ func (t toolInputPath) effectivePath() string {
 // checker is consulted for every writing tool. Pass nil to allow all writes
 // (fail-open behaviour, used when databases are unavailable).
 //
+// cmdChecker is consulted for Bash tool invocations. Pass nil to allow all
+// commands (fail-open). Built-in rules are always checked regardless.
+//
 // Return values:
 //   - event, nil error      → allowed (exit 0); event carries the log data
 //   - event, ErrDenied      → denied; JSON written to w; caller must exit 2
 //   - nil, other error      → malformed payload or IO error; caller should exit 1
 //
 // Evaluate never calls os.Exit itself, making it fully testable.
-func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker) (*Event, error) {
+func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, cmdChecker CommandChecker) (*Event, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("hook: read stdin: %w", err)
@@ -153,7 +156,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker) (
 
 	// Bash tool: check whether the command targets any files via shell write patterns.
 	if payload.ToolName == "Bash" {
-		return evaluateBash(payload, w, errW, checker)
+		return evaluateBash(payload, w, errW, checker, cmdChecker)
 	}
 
 	// apply_patch: file paths are embedded in the patch body, potentially multiple.
@@ -210,26 +213,45 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker) (
 // evaluateBash handles the Bash tool. It parses the command string for shell
 // write patterns (redirections, tee, sed -i, cp, mv). If any write target is
 // detected the command is denied; otherwise it is allowed and logged.
-func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker) (*Event, error) {
+func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker, cmdChecker CommandChecker) (*Event, error) {
 	command := parseBashToolInput(payload.ToolInput)
 
-	// Block agents from running the cordon CLI directly.
-	if isCordonCommand(command) {
-		event := &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  "",
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionDeny,
-			Cwd:       payload.Cwd,
+	// Check each segment of the command against built-in and custom command rules.
+	segments := splitCompoundCommand(command)
+	for _, seg := range segments {
+		// Built-in rules are always checked (no DB needed).
+		if matched := CheckBuiltinRules(seg); matched != nil {
+			reason := commandRuleDenyReason(matched)
+			event := &Event{
+				ToolName:  payload.ToolName,
+				ToolInput: payload.ToolInput,
+				Decision:  DecisionDeny,
+				Cwd:       payload.Cwd,
+			}
+			if err := encodeClaudeDeny(w, reason); err != nil {
+				return nil, err
+			}
+			fmt.Fprintf(errW, "%s\n", reason)
+			return event, ErrDenied
 		}
-		reason := "CORDON POLICY: Agents are not permitted to run the cordon command directly. " +
-			"Only the Cordon MCP can be used to execute cordon commands by agents. " +
-			"Do not attempt to bypass this restriction."
-		if err := encodeClaudeDeny(w, reason); err != nil {
-			return nil, err
+
+		// Custom rules from the policy database.
+		if cmdChecker != nil {
+			if allowed, matched := cmdChecker(seg, payload.Cwd); !allowed && matched != nil {
+				reason := commandRuleDenyReason(matched)
+				event := &Event{
+					ToolName:  payload.ToolName,
+					ToolInput: payload.ToolInput,
+					Decision:  DecisionDeny,
+					Cwd:       payload.Cwd,
+				}
+				if err := encodeClaudeDeny(w, reason); err != nil {
+					return nil, err
+				}
+				fmt.Fprintf(errW, "%s\n", reason)
+				return event, ErrDenied
+			}
 		}
-		fmt.Fprintf(errW, "%s\n", reason)
-		return event, ErrDenied
 	}
 
 	targets := bashWriteTargets(command)
@@ -431,12 +453,3 @@ func writeCopilotDeny(errW io.Writer, reason string) {
 	fmt.Fprintf(errW, "%s\n", reason)
 }
 
-// isCordonCommand returns true if the bash command invokes the cordon CLI.
-// This prevents agents from running cordon commands directly (e.g. cordon pass issue).
-func isCordonCommand(command string) bool {
-	cmd := strings.TrimSpace(command)
-	return cmd == "cordon" || strings.HasPrefix(cmd, "cordon ") ||
-		strings.Contains(cmd, "|cordon ") || strings.Contains(cmd, "| cordon ") ||
-		strings.Contains(cmd, "&& cordon ") || strings.Contains(cmd, "&&cordon ") ||
-		strings.Contains(cmd, "; cordon ") || strings.Contains(cmd, ";cordon ")
-}

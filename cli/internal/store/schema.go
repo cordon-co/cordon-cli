@@ -23,6 +23,25 @@ func MigratePolicyDB(db *sql.DB) error {
 			updated_at TEXT NOT NULL
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_pattern ON zones(pattern)`,
+
+		// command_rules — one row per prohibited command pattern.
+		//
+		// pattern:    glob-style pattern matched against the full bash command string.
+		// rule_type:  'builtin' (compiled-in, read-only) or 'custom' (user-defined).
+		// severity:   'block' (hard deny) or 'warn' (log + allow, future use).
+		// reason:     human-readable explanation shown in the deny message.
+		// created_by: user identifier.
+		// created_at / updated_at: ISO 8601 timestamps.
+		`CREATE TABLE IF NOT EXISTS command_rules (
+			id         TEXT PRIMARY KEY,
+			pattern    TEXT NOT NULL,
+			rule_type  TEXT NOT NULL DEFAULT 'custom' CHECK(rule_type IN ('builtin','custom')),
+			reason     TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_command_rules_pattern ON command_rules(pattern)`,
 	}
 
 	for _, stmt := range stmts {

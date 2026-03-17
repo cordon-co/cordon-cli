@@ -33,6 +33,17 @@
 | ZON-05 | Zones stored in `.cordon/policy.db` (SQLite) for unauthenticated users | Done |
 | ZON-06 | Zones cached in `~/.cordon/repos/<repo-hash>/policy-cache.db` for authenticated users, synced from cloud | None |
 
+## Command Rule Management
+
+| # | Requirement | Progress |
+|---|-------------|--------|
+| CMD-01 | Built-in command rules compiled into the binary block agents from running `cordon *` commands directly | Done |
+| CMD-02 | `cordon rule add <pattern> [--reason] [--severity block\|warn]` adds a custom command rule to policy.db | Done |
+| CMD-03 | `cordon rule list` displays built-in and custom command rules with severity and reason | Done |
+| CMD-04 | `cordon rule remove <pattern>` removes a custom command rule (built-ins cannot be removed) | Done |
+| CMD-05 | Hook evaluates each segment of compound commands (`&&`, `\|\|`, `;`, `\|`) independently against rules | Done |
+| CMD-06 | `cordon hook` is exempt from the built-in cordon block (it is the hook runner, not an agent command) | Done |
+
 ## Pass Management
 
 | # | Requirement | Progress |
@@ -109,7 +120,7 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| SAF-01 | Built-in hook rule: block destructive commands (git reset --hard, git push --force, rm -rf) | None |
+| SAF-01 | Built-in hook rule: block destructive commands (git reset --hard, git push --force, rm -rf) | In Progress |
 | SAF-02 | Built-in hook rule: block writes to files containing detected credential patterns | None |
 | SAF-03 | Built-in hook rule: block modifications to CI/CD config files (.github/workflows/) | None |
 | SAF-04 | Safety hooks configurable per-repo (enable/disable individual rules) | None |

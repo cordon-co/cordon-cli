@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/cordon-co/cordon/cmd/command"
 	"github.com/cordon-co/cordon/cmd/pass"
 	"github.com/cordon-co/cordon/cmd/zone"
 	"github.com/cordon-co/cordon/internal/flags"
@@ -58,6 +59,7 @@ func init() {
 		versionCmd,
 		zone.Cmd,
 		pass.Cmd,
+		command.Cmd,
 	)
 }
 
