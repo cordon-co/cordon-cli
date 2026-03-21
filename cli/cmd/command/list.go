@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/cordon-co/cordon/internal/flags"
-	"github.com/cordon-co/cordon/internal/hook"
 	"github.com/cordon-co/cordon/internal/reporoot"
 	"github.com/cordon-co/cordon/internal/store"
 	"github.com/spf13/cobra"
@@ -49,14 +48,10 @@ func runCommandList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("command list: migrate policy database: %w", err)
 	}
 
-	customRules, err := store.ListRules(policyDB)
+	allRules, err := store.ListRules(policyDB)
 	if err != nil {
 		return fmt.Errorf("command list: %w", err)
 	}
-
-	// Merge built-in rules (as CommandRule structs) with custom rules.
-	allRules := hook.BuiltinRulesAsStore()
-	allRules = append(allRules, customRules...)
 
 	if flags.JSON {
 		result := commandListResult{Rules: allRules}
@@ -82,7 +77,7 @@ func runCommandList(cmd *cobra.Command, args []string) error {
 		}
 		createdBy := r.CreatedBy
 		if createdBy == "" {
-			createdBy = "(built-in)"
+			createdBy = "local"
 		}
 		fmt.Printf("%-30s  %-6s  %-16s  %s\n", r.Pattern, r.RuleType, createdBy, createdAt)
 	}

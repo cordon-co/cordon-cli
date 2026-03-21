@@ -3,8 +3,6 @@ package hook
 import (
 	"fmt"
 	"strings"
-
-	"github.com/cordon-co/cordon/internal/store"
 )
 
 // MatchedRule describes a command rule that was matched against a command.
@@ -26,51 +24,50 @@ type MatchedRule struct {
 // A nil CommandChecker allows all commands (fail-open).
 type CommandChecker func(command, cwd string) (allowed bool, matched *MatchedRule)
 
-// builtinRules are always active regardless of policy.db contents.
-// These protect the Cordon system itself and cover SAF-01 destructive operations.
-var builtinRules = []string{
-	"cordon",
-	"cordon *",
+// builtinRule is a command rule compiled into the binary.
+type builtinRule struct {
+	Pattern  string
+	RuleType string // "deny" or "allow"
 }
 
-// BuiltinRulesAsStore returns the built-in rules as store.CommandRule values
-// for display in `cordon command list`.
-func BuiltinRulesAsStore() []store.CommandRule {
-	rules := make([]store.CommandRule, len(builtinRules))
-	for i, pattern := range builtinRules {
-		rules[i] = store.CommandRule{
-			Pattern:       pattern,
-			RuleType:      "deny",
-			RuleAuthority: "guardian",
-		}
-	}
-	return rules
+// builtinRules are always active regardless of policy.db contents.
+// These protect the Cordon system itself and cover SAF-01 destructive operations.
+// Allow rules (e.g. "cordon hook") supersede deny rules, just like DB rules.
+var builtinRules = []builtinRule{
+	// Deny: agents must not run cordon CLI commands.
+	{Pattern: "cordon", RuleType: "deny"},
+	{Pattern: "cordon *", RuleType: "deny"},
+	// Allow: the hook runner is invoked by the agent framework, not the agent.
+	{Pattern: "cordon hook", RuleType: "allow"},
 }
 
 // CheckBuiltinRules checks command against all built-in rules.
-// Returns the first matching rule, or nil if none match.
+// Returns the first matching deny rule, or nil if the command is permitted.
+// Allow rules supersede deny rules: if any built-in allow rule matches,
+// the command is permitted regardless of deny rules.
 func CheckBuiltinRules(command string) *MatchedRule {
 	command = strings.TrimSpace(command)
-	for _, pattern := range builtinRules {
-		if commandMatchesBuiltin(command, pattern) {
-			return &MatchedRule{
-				Pattern:       pattern,
+	var firstDeny *MatchedRule
+	for _, r := range builtinRules {
+		if !commandMatchesBuiltin(command, r.Pattern) {
+			continue
+		}
+		if r.RuleType == "allow" {
+			return nil // allow supersedes all deny rules
+		}
+		if firstDeny == nil {
+			firstDeny = &MatchedRule{
+				Pattern:       r.Pattern,
 				RuleType:      "deny",
 				RuleAuthority: "guardian",
 			}
 		}
 	}
-	return nil
+	return firstDeny
 }
 
 // commandMatchesBuiltin reports whether command matches a built-in pattern.
-// "cordon hook" is always exempt — it is the hook runner invoked by the
-// agent framework itself, not a command issued by the agent.
 func commandMatchesBuiltin(command, pattern string) bool {
-	// Exempt the hook runner from all cordon-related built-in rules.
-	if command == "cordon hook" || strings.HasPrefix(command, "cordon hook ") {
-		return false
-	}
 	if command == pattern {
 		return true
 	}
