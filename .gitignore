@@ -1,2 +1,6 @@
 cli/build/
 .cordon/
+.vscode/
+.env
+.mcp.json
+.github/hooks/
