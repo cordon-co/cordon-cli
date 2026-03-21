@@ -9,9 +9,9 @@ import (
 
 // MatchedRule describes a command rule that was matched against a command.
 type MatchedRule struct {
-	Pattern  string
-	RuleType string // "builtin" or "custom"
-	Reason   string
+	Pattern       string
+	RuleType      string // "deny" or "allow"
+	RuleAuthority string // "standard" or "guardian"
 }
 
 // CommandChecker checks whether a bash command segment is allowed by command rules.
@@ -26,28 +26,22 @@ type MatchedRule struct {
 // A nil CommandChecker allows all commands (fail-open).
 type CommandChecker func(command, cwd string) (allowed bool, matched *MatchedRule)
 
-// builtinRule is a command rule compiled into the binary.
-type builtinRule struct {
-	Pattern string
-	Reason  string
-}
-
 // builtinRules are always active regardless of policy.db contents.
 // These protect the Cordon system itself and cover SAF-01 destructive operations.
-var builtinRules = []builtinRule{
-	{Pattern: "cordon", Reason: "Agents not permitted to use."},
-	{Pattern: "cordon *", Reason: "Agents not permitted to use."},
+var builtinRules = []string{
+	"cordon",
+	"cordon *",
 }
 
 // BuiltinRulesAsStore returns the built-in rules as store.CommandRule values
-// for display in `cordon rule list`.
+// for display in `cordon command list`.
 func BuiltinRulesAsStore() []store.CommandRule {
 	rules := make([]store.CommandRule, len(builtinRules))
-	for i, r := range builtinRules {
+	for i, pattern := range builtinRules {
 		rules[i] = store.CommandRule{
-			Pattern:  r.Pattern,
-			RuleType: "builtin",
-			Reason:   r.Reason,
+			Pattern:       pattern,
+			RuleType:      "deny",
+			RuleAuthority: "guardian",
 		}
 	}
 	return rules
@@ -57,12 +51,12 @@ func BuiltinRulesAsStore() []store.CommandRule {
 // Returns the first matching rule, or nil if none match.
 func CheckBuiltinRules(command string) *MatchedRule {
 	command = strings.TrimSpace(command)
-	for _, r := range builtinRules {
-		if commandMatchesBuiltin(command, r.Pattern) {
+	for _, pattern := range builtinRules {
+		if commandMatchesBuiltin(command, pattern) {
 			return &MatchedRule{
-				Pattern:  r.Pattern,
-				RuleType: "builtin",
-				Reason:   r.Reason,
+				Pattern:       pattern,
+				RuleType:      "deny",
+				RuleAuthority: "guardian",
 			}
 		}
 	}
@@ -119,8 +113,7 @@ func commandRuleDenyReason(rule *MatchedRule) string {
 	return fmt.Sprintf(
 		"CORDON POLICY: This command is prohibited by a Cordon command rule. "+
 			"Rule: %s. "+
-			"Reason: %s "+
 			"This is an enforced policy restriction, not a technical error.",
-		rule.Pattern, rule.Reason,
+		rule.Pattern,
 	)
 }

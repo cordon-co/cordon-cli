@@ -182,9 +182,9 @@ func buildCommandChecker() hook.CommandChecker {
 		}
 
 		return false, &hook.MatchedRule{
-			Pattern:  rule.Pattern,
-			RuleType: rule.RuleType,
-			Reason:   rule.Reason,
+			Pattern:       rule.Pattern,
+			RuleType:      rule.RuleType,
+			RuleAuthority: rule.RuleAuthority,
 		}
 	}
 }

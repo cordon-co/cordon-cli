@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"strings"
 )
 
 // MigratePolicyDB creates all tables and indexes in the policy database if
@@ -13,7 +12,6 @@ func MigratePolicyDB(db *sql.DB) error {
 		//
 		// id:             UUID v4 (hex string).
 		// pattern:        file path, directory path, or glob pattern.
-		// zone_type:      legacy column; kept for backwards compatibility. New code uses zone_access.
 		// zone_access:    'deny' (blocks access) or 'allow' (permits access, overrides deny zones).
 		// zone_authority: 'standard' (any member) or 'guardian' (guardian/admin only).
 		// prevent_write:  1 = block agent write tools (always true for now).
@@ -24,7 +22,6 @@ func MigratePolicyDB(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS zones (
 			id             TEXT    PRIMARY KEY,
 			pattern        TEXT    NOT NULL,
-			zone_type      TEXT    NOT NULL DEFAULT 'standard' CHECK(zone_type IN ('standard','guardian')),
 			zone_access    TEXT    NOT NULL DEFAULT 'deny' CHECK(zone_access IN ('allow','deny')),
 			zone_authority TEXT    NOT NULL DEFAULT 'standard' CHECK(zone_authority IN ('standard','guardian')),
 			prevent_write  INTEGER NOT NULL DEFAULT 1,
@@ -35,22 +32,21 @@ func MigratePolicyDB(db *sql.DB) error {
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_pattern ON zones(pattern)`,
 
-		// command_rules — one row per prohibited command pattern.
+		// command_rules — one row per command rule pattern.
 		//
-		// pattern:    glob-style pattern matched against the full bash command string.
-		// rule_type:  'builtin' (compiled-in, read-only) or 'custom' (user-defined).
-		// severity:   'block' (hard deny) or 'warn' (log + allow, future use).
-		// reason:     human-readable explanation shown in the deny message.
-		// created_by: user identifier.
+		// pattern:        glob-style pattern matched against the full bash command string.
+		// rule_access:    'deny' (blocks command) or 'allow' (permits command, overrides deny rules).
+		// rule_authority: 'standard' (any member) or 'guardian' (guardian/admin only).
+		// created_by:     user identifier.
 		// created_at / updated_at: ISO 8601 timestamps.
 		`CREATE TABLE IF NOT EXISTS command_rules (
-			id         TEXT PRIMARY KEY,
-			pattern    TEXT NOT NULL,
-			rule_type  TEXT NOT NULL DEFAULT 'custom' CHECK(rule_type IN ('builtin','custom')),
-			reason     TEXT NOT NULL DEFAULT '',
-			created_by TEXT NOT NULL DEFAULT '',
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			id             TEXT PRIMARY KEY,
+			pattern        TEXT NOT NULL,
+			rule_access    TEXT NOT NULL DEFAULT 'deny' CHECK(rule_access IN ('allow','deny')),
+			rule_authority TEXT NOT NULL DEFAULT 'standard' CHECK(rule_authority IN ('standard','guardian')),
+			created_by     TEXT NOT NULL DEFAULT '',
+			created_at     TEXT NOT NULL,
+			updated_at     TEXT NOT NULL
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_command_rules_pattern ON command_rules(pattern)`,
 	}
@@ -61,53 +57,7 @@ func MigratePolicyDB(db *sql.DB) error {
 		}
 	}
 
-	// Add new columns to pre-existing databases. Each ALTER is attempted
-	// individually; "duplicate column name" means the column already exists,
-	// which is fine — we ignore it.
-	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN prevent_write INTEGER NOT NULL DEFAULT 1`); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN prevent_read INTEGER NOT NULL DEFAULT 0`); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN zone_access TEXT NOT NULL DEFAULT 'deny'`); err != nil {
-		return err
-	}
-	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN zone_authority TEXT NOT NULL DEFAULT 'standard'`); err != nil {
-		return err
-	}
-
-	// Backfill zone_authority from the legacy zone_type column for existing rows.
-	// Rows created before this migration have zone_authority='standard' (the default)
-	// but may have zone_type='guardian'. This copies the correct value over.
-	// Idempotent: only touches rows where the values actually differ.
-	if _, err := db.Exec(`UPDATE zones SET zone_authority = zone_type WHERE zone_authority = 'standard' AND zone_type = 'guardian'`); err != nil {
-		return err
-	}
-
 	return nil
-}
-
-// addColumnIfMissing executes an ALTER TABLE … ADD COLUMN statement and
-// silently ignores the error if the column already exists.
-func addColumnIfMissing(db *sql.DB, stmt string) error {
-	_, err := db.Exec(stmt)
-	if err != nil && !isDuplicateColumnError(err) {
-		return err
-	}
-	return nil
-}
-
-// isDuplicateColumnError reports whether err is the SQLite "duplicate column
-// name" error produced when trying to ADD COLUMN on a column that already
-// exists. We match on the error string because database/sql does not expose
-// SQLite error codes directly.
-func isDuplicateColumnError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "duplicate column name") || strings.Contains(msg, "already exists")
 }
 
 // MigrateDataDB creates all tables and indexes in the data database if they

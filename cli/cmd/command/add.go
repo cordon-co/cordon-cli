@@ -12,18 +12,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var addReason string
+var addAllow bool
 
 var addCmd = &cobra.Command{
 	Use:   "add <pattern>",
 	Short: "Add a command rule",
-	Long:  "Prohibit agents from running shell commands matching the given pattern.",
+	Long:  "Add a command rule. Deny rules (default) block matching commands. Allow rules permit commands, overriding deny rules.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runCommandAdd,
 }
 
 func init() {
-	addCmd.Flags().StringVar(&addReason, "reason", "", "Explanation shown to agents when this rule is triggered")
+	addCmd.Flags().BoolVar(&addAllow, "allow", false, "Create an allow rule (permits command, overrides deny rules)")
 }
 
 type commandAddResult struct {
@@ -56,7 +56,13 @@ func runCommandAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("command add: migrate policy database: %w", err)
 	}
 
-	r, err := store.AddRule(policyDB, pattern, addReason, store.CurrentOSUser())
+	ruleAccess := "deny"
+	if addAllow {
+		ruleAccess = "allow"
+	}
+	ruleAuthority := "standard"
+
+	r, err := store.AddRule(policyDB, pattern, ruleAccess, ruleAuthority, store.CurrentOSUser())
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicatePattern) {
 			return fmt.Errorf("command rule already exists: %s", pattern)
@@ -75,7 +81,7 @@ func runCommandAdd(cmd *cobra.Command, args []string) error {
 		} else {
 			_ = store.InsertAudit(dataDB, store.AuditEntry{
 				EventType: "command_add",
-				Detail:    fmt.Sprintf("pattern=%s", r.Pattern),
+				Detail:    fmt.Sprintf("pattern=%s rule_type=%s rule_authority=%s", r.Pattern, r.RuleType, r.RuleAuthority),
 				User:      store.CurrentOSUser(),
 			})
 		}
@@ -87,6 +93,13 @@ func runCommandAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("added command rule: %s\n", r.Pattern)
+	ruleLabel := "deny command rule"
+	if r.RuleType == "allow" {
+		ruleLabel = "allow command rule"
+	}
+	if r.RuleAuthority == "guardian" {
+		ruleLabel += " (guardian)"
+	}
+	fmt.Printf("added %s: %s\n", ruleLabel, r.Pattern)
 	return nil
 }

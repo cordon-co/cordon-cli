@@ -39,12 +39,13 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| CMD-01 | Built-in command rules compiled into the binary block agents from running `cordon *` commands directly | Done |
-| CMD-02 | `cordon rule add <pattern> [--reason] [--severity block\|warn]` adds a custom command rule to policy.db | Done |
-| CMD-03 | `cordon rule list` displays built-in and custom command rules with severity and reason | Done |
-| CMD-04 | `cordon rule remove <pattern>` removes a custom command rule (built-ins cannot be removed) | Done |
+| CMD-01 | Guardian-authority deny rules compiled into the binary block agents from running `cordon *` commands directly. Built-in rules short-circuit before DB rules and cannot be overridden by allow rules | Done |
+| CMD-02 | `cordon command add <pattern>` adds a deny command rule (standard authority) to policy.db | Done |
+| CMD-03 | `cordon command list` displays all command rules with TYPE (allow/deny), PATTERN, CREATED BY, CREATED AT | Done |
+| CMD-04 | `cordon command remove <pattern>` removes a standard-authority command rule (guardian rules cannot be removed) | Done |
 | CMD-05 | Hook evaluates each segment of compound commands (`&&`, `\|\|`, `;`, `\|`) independently against rules | Done |
 | CMD-06 | `cordon hook` is exempt from the built-in cordon block (it is the hook runner, not an agent command) | Done |
+| CMD-07 | `cordon command add --allow <pattern>` creates an allow rule that overrides deny rules for matching commands. Rule types: deny (blocks command, default) and allow (permits command, overrides deny). Rule authority: standard (any member) or guardian (admin only) | Done |
 
 ## Pass Management
 

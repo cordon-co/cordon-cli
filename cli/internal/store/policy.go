@@ -66,9 +66,9 @@ func AddZone(db *sql.DB, pattern, zoneAccess, zoneAuthority, createdBy string, p
 	}
 
 	_, err = db.Exec(
-		`INSERT INTO zones (id, pattern, zone_type, zone_access, zone_authority, prevent_write, prevent_read, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		z.ID, z.Pattern, z.ZoneAuthority, z.ZoneType, z.ZoneAuthority, z.PreventWrite, z.PreventRead, z.CreatedBy, z.CreatedAt, z.UpdatedAt,
+		`INSERT INTO zones (id, pattern, zone_access, zone_authority, prevent_write, prevent_read, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		z.ID, z.Pattern, z.ZoneType, z.ZoneAuthority, z.PreventWrite, z.PreventRead, z.CreatedBy, z.CreatedAt, z.UpdatedAt,
 	)
 	if err != nil {
 		if isDuplicatePatternError(err) {

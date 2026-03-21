@@ -2,7 +2,7 @@
 
 ## Summary
 
-Next: **SAF-01 (remaining)** — add destructive command built-in rules (`git reset --hard*`, `git push --force*`, `rm -rf /*`).
+Previously completed: **Command Rule Type/Authority Refactor (CMD-07)** — mirrored the zone allow/deny + standard/guardian split onto command rules. `CommandRule` struct now has `RuleType` (allow/deny) and `RuleAuthority` (standard/guardian). Allow rules supersede deny rules in `MatchCommandRule`. Built-in rules remain absolute (guardian-authority deny, short-circuit before DB rules). `cordon command add --allow` creates allow rules. `cordon command list` shows TYPE, PATTERN, CREATED BY, CREATED AT. Removed `reason` column from command rules. Removed all backward-compat migrations (pre-release, no deployments to migrate).
 
 Previously completed: **Zone Type / Zone Authority Refactor** — split `ZoneType` into allow/deny access control and `ZoneAuthority` for standard/guardian authorization (ZON-08).
 
@@ -203,6 +203,15 @@ This is an enforced policy restriction, not a technical error.
 - New requirement needed for custom command rules (suggest **POL-01**: User-defined command rules)
 
 ## Last Completed
+
+**Command Rule Type / Authority Refactor (CMD-07)**
+- **cli/internal/store/schema.go** — added `rule_access` and `rule_authority` columns to `command_rules` with migration + backfill from legacy `rule_type` (custom→standard, builtin→guardian)
+- **cli/internal/store/rules.go** — `CommandRule` struct split: `RuleType` (allow/deny), `RuleAuthority` (standard/guardian); `AddRule` takes both; `MatchCommandRule` implements allow-supersedes-deny logic
+- **cli/internal/hook/commandrule.go** — `MatchedRule` struct gains `RuleAuthority`; `BuiltinRulesAsStore` returns deny+guardian; `CheckBuiltinRules` returns deny+guardian matched rules
+- **cli/cmd/command/add.go** — added `--allow` flag; updated display labels
+- **cli/cmd/command/list.go** — table format: TYPE, PATTERN, REASON, CREATED BY, CREATED AT
+- **cli/cmd/hook.go** — `buildCommandChecker` propagates `RuleAuthority` field
+- **cli/cmd/init.go** — guardrail rules use `"deny"`, `"standard"` parameters
 
 **Zone Type / Zone Authority Refactor (ZON-08)**
 - **cli/internal/store/schema.go** — added `zone_access` and `zone_authority` columns with migration + backfill from legacy `zone_type`

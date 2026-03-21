@@ -159,13 +159,13 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 	user := store.CurrentOSUser()
 	added := 0
 
-	for _, r := range store.StandardGuardrails {
-		_, err := store.AddRule(policyDB, r.Pattern, r.Reason, user)
+	for _, pattern := range store.StandardGuardrails {
+		_, err := store.AddRule(policyDB, pattern, "deny", "standard", user)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue
 			}
-			return fmt.Errorf("add guardrail rule %q: %w", r.Pattern, err)
+			return fmt.Errorf("add guardrail rule %q: %w", pattern, err)
 		}
 		added++
 	}

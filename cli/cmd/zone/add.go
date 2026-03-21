@@ -105,7 +105,7 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 				ZoneID:    z.ID,
 				FilePath:  z.Pattern,
 				User:      user,
-				Detail:    fmt.Sprintf("zone_type=%s zone_authority=%s", z.ZoneType, z.ZoneAuthority),
+				Detail:    fmt.Sprintf("zone_access=%s zone_authority=%s", z.ZoneType, z.ZoneAuthority),
 			})
 		}
 	}

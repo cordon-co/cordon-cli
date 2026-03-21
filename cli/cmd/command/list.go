@@ -73,10 +73,18 @@ func runCommandList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("%-30s  %-9s  %s\n", "PATTERN", "TYPE", "REASON")
+	fmt.Printf("%-30s  %-6s  %-16s  %s\n", "PATTERN", "TYPE", "CREATED BY", "CREATED AT")
 	fmt.Println(strings.Repeat("-", 80))
 	for _, r := range allRules {
-		fmt.Printf("%-30s  %-9s  %s\n", r.Pattern, r.RuleType, r.Reason)
+		createdAt := r.CreatedAt
+		if len(createdAt) > 10 {
+			createdAt = createdAt[:10] // show date portion only
+		}
+		createdBy := r.CreatedBy
+		if createdBy == "" {
+			createdBy = "(built-in)"
+		}
+		fmt.Printf("%-30s  %-6s  %-16s  %s\n", r.Pattern, r.RuleType, createdBy, createdAt)
 	}
 	return nil
 }
