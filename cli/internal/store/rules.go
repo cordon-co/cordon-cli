@@ -67,6 +67,9 @@ func AddRule(db *sql.DB, pattern, reason, createdBy string) (*CommandRule, error
 		r.ID, r.Pattern, r.RuleType, r.Reason, r.CreatedBy, r.CreatedAt, r.UpdatedAt,
 	)
 	if err != nil {
+		if isDuplicatePatternError(err) {
+			return nil, fmt.Errorf("store: add rule: %w: %s", ErrDuplicatePattern, pattern)
+		}
 		return nil, fmt.Errorf("store: add rule: %w", err)
 	}
 	return &r, nil

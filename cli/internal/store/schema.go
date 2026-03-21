@@ -11,18 +11,22 @@ func MigratePolicyDB(db *sql.DB) error {
 	stmts := []string{
 		// zones — one row per protected file, folder, or glob pattern.
 		//
-		// id:            UUID v4 (hex string).
-		// pattern:       file path, directory path, or glob pattern.
-		// zone_type:     'standard' (any member) or 'guardian' (guardian/admin only).
-		// prevent_write: 1 = block agent write tools (always true for now).
-		// prevent_read:  1 = also block agent read tools (opt-in via --prevent-read).
-		// created_by:    user identifier (github username or OS username for local users).
-		// created_at:    ISO 8601 timestamp.
-		// updated_at:    ISO 8601 timestamp.
+		// id:             UUID v4 (hex string).
+		// pattern:        file path, directory path, or glob pattern.
+		// zone_type:      legacy column; kept for backwards compatibility. New code uses zone_access.
+		// zone_access:    'deny' (blocks access) or 'allow' (permits access, overrides deny zones).
+		// zone_authority: 'standard' (any member) or 'guardian' (guardian/admin only).
+		// prevent_write:  1 = block agent write tools (always true for now).
+		// prevent_read:   1 = also block agent read tools (opt-in via --prevent-read).
+		// created_by:     user identifier (github username or OS username for local users).
+		// created_at:     ISO 8601 timestamp.
+		// updated_at:     ISO 8601 timestamp.
 		`CREATE TABLE IF NOT EXISTS zones (
 			id             TEXT    PRIMARY KEY,
 			pattern        TEXT    NOT NULL,
 			zone_type      TEXT    NOT NULL DEFAULT 'standard' CHECK(zone_type IN ('standard','guardian')),
+			zone_access    TEXT    NOT NULL DEFAULT 'deny' CHECK(zone_access IN ('allow','deny')),
+			zone_authority TEXT    NOT NULL DEFAULT 'standard' CHECK(zone_authority IN ('standard','guardian')),
 			prevent_write  INTEGER NOT NULL DEFAULT 1,
 			prevent_read   INTEGER NOT NULL DEFAULT 0,
 			created_by     TEXT    NOT NULL DEFAULT '',
@@ -64,6 +68,20 @@ func MigratePolicyDB(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN prevent_read INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN zone_access TEXT NOT NULL DEFAULT 'deny'`); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, `ALTER TABLE zones ADD COLUMN zone_authority TEXT NOT NULL DEFAULT 'standard'`); err != nil {
+		return err
+	}
+
+	// Backfill zone_authority from the legacy zone_type column for existing rows.
+	// Rows created before this migration have zone_authority='standard' (the default)
+	// but may have zone_type='guardian'. This copies the correct value over.
+	// Idempotent: only touches rows where the values actually differ.
+	if _, err := db.Exec(`UPDATE zones SET zone_authority = zone_type WHERE zone_authority = 'standard' AND zone_type = 'guardian'`); err != nil {
 		return err
 	}
 

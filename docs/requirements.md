@@ -26,13 +26,14 @@
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| ZON-01 | `cordon zone add <file\|folder\|glob>` creates a standard zone in policy.db | Done |
-| ZON-02 | `cordon zone add --guardian <file\|folder\|glob>` creates a guardian zone (requires guardian/admin role when authenticated) | Done |
+| ZON-01 | `cordon zone add <file\|folder\|glob>` creates a deny zone (standard authority) in policy.db | Done |
+| ZON-02 | `cordon zone add --guardian <file\|folder\|glob>` creates a zone with guardian authority (requires guardian/admin role when authenticated) | Done |
 | ZON-03 | `cordon zone list` displays all active zones with type, creator, and scope | Done |
 | ZON-04 | `cordon zone remove <file\|folder\|glob>` removes a zone (guardian zones require guardian/admin role) | Done |
 | ZON-05 | Zones stored in `.cordon/policy.db` (SQLite) for unauthenticated users | Done |
 | ZON-06 | Zones cached in `~/.cordon/repos/<repo-hash>/policy-cache.db` for authenticated users, synced from cloud | None |
 | ZON-07 | `cordon zone add --prevent-read` also blocks agent read access (Read, Grep, Bash cat/head/tail/etc.) for credential and secret files | Done |
+| ZON-08 | Zone types: deny (blocks access, default) and allow (permits access, overrides deny zones). Zone authority: standard (any member) or guardian (admin only). `cordon zone add --allow` creates an allow zone | Done |
 
 ## Command Rule Management
 

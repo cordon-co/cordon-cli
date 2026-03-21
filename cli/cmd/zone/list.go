@@ -68,7 +68,7 @@ func runZoneList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Human-readable table.
-	fmt.Printf("%-50s  %-9s  %-12s  %-16s  %s\n", "PATTERN", "TYPE", "BLOCKS", "CREATED BY", "CREATED AT")
+	fmt.Printf("%-50s  %-9s  %-12s  %-16s  %s\n", "PATTERN", "TYPE", "OPS", "CREATED BY", "CREATED AT")
 	fmt.Println(strings.Repeat("-", 112))
 	for _, z := range zones {
 		createdAt := z.CreatedAt
@@ -80,7 +80,7 @@ func runZoneList(cmd *cobra.Command, args []string) error {
 			createdBy = "local"
 		}
 		blocks := "write"
-		if z.PreventRead {
+		if z.PreventRead || z.ZoneType == "allow" {
 			blocks = "read+write"
 		}
 		fmt.Printf("%-50s  %-9s  %-12s  %-16s  %s\n", z.Pattern, z.ZoneType, blocks, createdBy, createdAt)

@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -57,6 +58,9 @@ func runCommandAdd(cmd *cobra.Command, args []string) error {
 
 	r, err := store.AddRule(policyDB, pattern, addReason, store.CurrentOSUser())
 	if err != nil {
+		if errors.Is(err, store.ErrDuplicatePattern) {
+			return fmt.Errorf("command rule already exists: %s", pattern)
+		}
 		return fmt.Errorf("command add: %w", err)
 	}
 

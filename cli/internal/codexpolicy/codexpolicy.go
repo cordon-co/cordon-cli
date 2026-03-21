@@ -66,8 +66,11 @@ func buildContent(zones []store.Zone) string {
 	b.WriteString("### Deny List\n\n")
 
 	for _, z := range zones {
+		if z.ZoneType == "allow" {
+			continue // allow zones permit access; omit from deny list
+		}
 		label := ""
-		if z.ZoneType == "guardian" {
+		if z.ZoneAuthority == "guardian" {
 			label = " *(guardian zone — requires guardian/admin pass)*"
 		}
 		fmt.Fprintf(&b, "- `%s`%s\n", z.Pattern, label)

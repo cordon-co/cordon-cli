@@ -171,7 +171,7 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 	}
 
 	for _, z := range store.StandardGuardrailZones {
-		_, err := store.AddZone(policyDB, z.Pattern, "standard", user, z.PreventRead)
+		_, err := store.AddZone(policyDB, z.Pattern, "deny", "standard", user, z.PreventRead)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue

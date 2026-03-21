@@ -2,7 +2,11 @@
 
 ## Summary
 
-Next: **Zone Read Prevention + Guardrail Zones** — add `prevent_read`/`prevent_write` columns to zones, hook enforcement for read tools, `--prevent-read` flag on `cordon zone add`, and standard guardrail zones seeded on `cordon init` (ZON-07 new, SAF-02 partial).
+Next: **SAF-01 (remaining)** — add destructive command built-in rules (`git reset --hard*`, `git push --force*`, `rm -rf /*`).
+
+Previously completed: **Zone Type / Zone Authority Refactor** — split `ZoneType` into allow/deny access control and `ZoneAuthority` for standard/guardian authorization (ZON-08).
+
+Previously completed: **Zone Read Prevention + Guardrail Zones** — `prevent_read`/`prevent_write` columns, hook enforcement for read tools, `--prevent-read` flag, standard guardrail zones (ZON-07, SAF-02).
 
 Previously completed: **Command Rules** — policy-based enforcement of shell commands (CMD-01 through CMD-06, SAF-01 in progress).
 
@@ -200,16 +204,16 @@ This is an enforced policy restriction, not a technical error.
 
 ## Last Completed
 
-- **cli/internal/store/schema.go** — `command_rules` table added to `MigratePolicyDB`
-- **cli/internal/store/rules.go** — NEW: `CommandRule` struct, `AddRule`, `ListRules`, `RemoveRule`, `MatchCommandRule`
-- **cli/internal/hook/commandrule.go** — NEW: `CommandChecker` type, `MatchedRule`, built-in rules, `CheckBuiltinRules`, `BuiltinRulesAsStore`, `splitCompoundCommand`, `commandRuleDenyReason`
-- **cli/internal/hook/hook.go** — `Evaluate` takes `CommandChecker`; `evaluateBash` uses splitter + built-in + custom rule checks; `isCordonCommand` removed
-- **cli/cmd/hook.go** — `buildCommandChecker` added and wired into `Evaluate`
-- **cli/cmd/rule/rule.go** — NEW: `cordon rule` parent command
-- **cli/cmd/rule/add.go** — NEW: `cordon rule add <pattern> [--reason] [--severity]`
-- **cli/cmd/rule/list.go** — NEW: `cordon rule list` (built-in + custom)
-- **cli/cmd/rule/remove.go** — NEW: `cordon rule remove <pattern>`
-- **cli/cmd/root.go** — `rule.Cmd` registered
+**Zone Type / Zone Authority Refactor (ZON-08)**
+- **cli/internal/store/schema.go** — added `zone_access` and `zone_authority` columns with migration + backfill from legacy `zone_type`
+- **cli/internal/store/policy.go** — `Zone` struct split: `ZoneType` (allow/deny), `ZoneAuthority` (standard/guardian); `AddZone` takes both; `ZoneForPath` implements allow-supersedes-deny logic
+- **cli/cmd/zone/add.go** — added `--allow` flag; validation for `--allow` + `--prevent-read`; updated display labels
+- **cli/cmd/init.go** — guardrail zones use `"deny"`, `"standard"` parameters
+- **cli/internal/codexpolicy/codexpolicy.go** — allow zones omitted from deny list; guardian label uses `ZoneAuthority`
+
+## Previously Completed
+
+- **Command Rules** (CMD-01–CMD-06): `command_rules` table, `CommandChecker`, built-in rules, `cordon rule` CLI
 
 ## Previously Completed
 

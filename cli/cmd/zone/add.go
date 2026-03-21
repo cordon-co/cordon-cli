@@ -2,6 +2,7 @@ package zone
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -13,8 +14,9 @@ import (
 )
 
 var (
-	guardian    bool
+	guardian     bool
 	preventRead bool
+	allow        bool
 )
 
 var addCmd = &cobra.Command{
@@ -28,6 +30,7 @@ var addCmd = &cobra.Command{
 func init() {
 	addCmd.Flags().BoolVar(&guardian, "guardian", false, "Create a guardian zone (requires guardian/admin role)")
 	addCmd.Flags().BoolVar(&preventRead, "prevent-read", false, "Also block agent read access (e.g. for credential files)")
+	addCmd.Flags().BoolVar(&allow, "allow", false, "Create an allow zone (permits access, overrides deny zones)")
 }
 
 type zoneAddResult struct {
@@ -60,9 +63,17 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("zone add: migrate policy database: %w", err)
 	}
 
-	zoneType := "standard"
+	if allow && preventRead {
+		return fmt.Errorf("zone add: --allow and --prevent-read cannot be used together (allow zones permit access)")
+	}
+
+	zoneAccess := "deny"
+	if allow {
+		zoneAccess = "allow"
+	}
+	zoneAuthority := "standard"
 	if guardian {
-		zoneType = "guardian"
+		zoneAuthority = "guardian"
 	}
 
 	user := store.CurrentOSUser()
@@ -72,8 +83,11 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 	// Glob patterns and already-relative patterns are unchanged.
 	pattern = store.NormalizePattern(pattern, absRoot)
 
-	z, err := store.AddZone(policyDB, pattern, zoneType, user, preventRead)
+	z, err := store.AddZone(policyDB, pattern, zoneAccess, zoneAuthority, user, preventRead)
 	if err != nil {
+		if errors.Is(err, store.ErrDuplicatePattern) {
+			return fmt.Errorf("zone already exists: %s", pattern)
+		}
 		return fmt.Errorf("zone add: %w", err)
 	}
 
@@ -91,7 +105,7 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 				ZoneID:    z.ID,
 				FilePath:  z.Pattern,
 				User:      user,
-				Detail:    fmt.Sprintf("zone_type=%s", z.ZoneType),
+				Detail:    fmt.Sprintf("zone_type=%s zone_authority=%s", z.ZoneType, z.ZoneAuthority),
 			})
 		}
 	}
@@ -110,9 +124,12 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	zoneLabel := "standard zone"
-	if z.ZoneType == "guardian" {
-		zoneLabel = "guardian zone"
+	zoneLabel := "deny zone"
+	if z.ZoneType == "allow" {
+		zoneLabel = "allow zone"
+	}
+	if z.ZoneAuthority == "guardian" {
+		zoneLabel += " (guardian)"
 	}
 	readLabel := ""
 	if z.PreventRead {
