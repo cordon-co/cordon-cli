@@ -62,20 +62,35 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("init: migrate policy database: %w", err)
 	}
 
-	// Data database (~/.cordon/repos/<hash>/data.db)
-	dataDB, err := store.OpenDataDB(absRoot)
+	// Ensure a stable perimeter ID exists for this project.
+	perimeterID, err := store.EnsurePerimeterID(policyDB)
+	if err != nil {
+		return fmt.Errorf("init: ensure perimeter id: %w", err)
+	}
+
+	// Data database (~/.cordon/repos/<perimeter_id>/data.db)
+	dataDBPath, err := store.DataDBPathFromID(perimeterID)
+	if err != nil {
+		return fmt.Errorf("init: resolve data db path: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dataDBPath), 0o755); err != nil {
+		return fmt.Errorf("init: create data directory: %w", err)
+	}
+
+	dataDB, err := sql.Open("sqlite", dataDBPath)
 	if err != nil {
 		return fmt.Errorf("init: open data database: %w", err)
 	}
 	defer dataDB.Close()
 
-	if err := store.MigrateDataDB(dataDB); err != nil {
-		return fmt.Errorf("init: migrate data database: %w", err)
+	if _, err := dataDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		dataDB.Close()
+		return fmt.Errorf("init: set WAL mode on data.db: %w", err)
 	}
 
-	dataDBPath, err := store.DataDBPath(absRoot)
-	if err != nil {
-		return fmt.Errorf("init: resolve data db path: %w", err)
+	if err := store.MigrateDataDB(dataDB); err != nil {
+		return fmt.Errorf("init: migrate data database: %w", err)
 	}
 
 	// .claude/settings.local.json

@@ -49,6 +49,16 @@ func MigratePolicyDB(db *sql.DB) error {
 			updated_at     TEXT NOT NULL
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_command_rules_pattern ON command_rules(pattern)`,
+
+		// perimeter_meta — singleton table storing project-level metadata.
+		//
+		// perimeter_id: UUID v4 identifying this cordon project. Used to locate the
+		//               corresponding data.db under ~/.cordon/repos/<perimeter_id>/.
+		//               Decouples data storage from the filesystem path and git.
+		`CREATE TABLE IF NOT EXISTS perimeter_meta (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
 	}
 
 	for _, stmt := range stmts {

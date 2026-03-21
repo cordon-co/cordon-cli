@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 )
 
-// Find walks up from the current working directory looking for a .git or
-// .cordon marker. If found, it returns the containing directory. If neither
-// marker is found, it returns the current working directory with a non-fatal
-// warning string.
+// Find walks up from the current working directory looking for a .cordon
+// directory. If found, it returns the containing directory. If no .cordon
+// directory is found, it returns the current working directory with a
+// non-fatal warning string.
 func Find() (root string, warn string, err error) {
 	start, err := os.Getwd()
 	if err != nil {
@@ -18,7 +18,7 @@ func Find() (root string, warn string, err error) {
 
 	current := start
 	for {
-		if hasEntry(current, ".git") || hasEntry(current, ".cordon") {
+		if hasEntry(current, ".cordon") {
 			return current, "", nil
 		}
 		parent := filepath.Dir(current)
@@ -29,7 +29,7 @@ func Find() (root string, warn string, err error) {
 		current = parent
 	}
 
-	return start, "no .git or .cordon found; using current directory", nil
+	return start, "no .cordon found; run 'cordon init' to set up this project", nil
 }
 
 func hasEntry(dir, name string) bool {
