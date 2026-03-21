@@ -13,9 +13,9 @@ cordon logout                        Clear stored credentials
 cordon sync                          Sync policy and audit data with Cordon Cloud
 cordon hook                          Evaluate a PreToolUse hook payload (reads JSON from stdin)
 cordon log [--file] [--denied-only] [--since] [--export csv]
-cordon zone add [--guardian] <path>
-cordon zone list
-cordon zone remove <path>
+cordon file add [--guardian] <path>
+cordon file list
+cordon file remove <path>
 cordon pass issue [--file] [--duration]
 cordon pass list
 cordon pass revoke <pass-id>
@@ -80,7 +80,7 @@ cmd/
   hook.go          invoked by agent PreToolUse hook config (hidden from help)
   log.go
   version.go
-  zone/            zone add|list|remove
+  file/            file add|list|remove
   pass/            pass issue|list|revoke
 internal/
   flags/           shared flag state (avoids circular imports between cmd packages)

@@ -1,4 +1,4 @@
-package zone
+package file
 
 import (
 	"encoding/json"
@@ -14,22 +14,22 @@ import (
 
 var removeCmd = &cobra.Command{
 	Use:   "remove <pattern>",
-	Short: "Remove a zone",
+	Short: "Remove a file rule",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runZoneRemove,
+	RunE:  runFileRemove,
 }
 
-type zoneRemoveResult struct {
+type fileRemoveResult struct {
 	Pattern string `json:"pattern"`
 	Removed bool   `json:"removed"`
 }
 
-func runZoneRemove(cmd *cobra.Command, args []string) error {
+func runFileRemove(cmd *cobra.Command, args []string) error {
 	pattern := args[0]
 
 	root, warn, err := reporoot.Find()
 	if err != nil {
-		return fmt.Errorf("zone remove: find repo root: %w", err)
+		return fmt.Errorf("file remove: find repo root: %w", err)
 	}
 	if warn != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "warning:", warn)
@@ -37,22 +37,22 @@ func runZoneRemove(cmd *cobra.Command, args []string) error {
 
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return fmt.Errorf("zone remove: resolve repo root: %w", err)
+		return fmt.Errorf("file remove: resolve repo root: %w", err)
 	}
 
 	policyDB, err := store.OpenPolicyDB(absRoot)
 	if err != nil {
-		return fmt.Errorf("zone remove: open policy database: %w", err)
+		return fmt.Errorf("file remove: open policy database: %w", err)
 	}
 	defer policyDB.Close()
 
 	if err := store.MigratePolicyDB(policyDB); err != nil {
-		return fmt.Errorf("zone remove: migrate policy database: %w", err)
+		return fmt.Errorf("file remove: migrate policy database: %w", err)
 	}
 
-	removed, err := store.RemoveZone(policyDB, pattern)
+	removed, err := store.RemoveFileRule(policyDB, pattern)
 	if err != nil {
-		return fmt.Errorf("zone remove: %w", err)
+		return fmt.Errorf("file remove: %w", err)
 	}
 
 	if removed {
@@ -67,7 +67,7 @@ func runZoneRemove(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not migrate data database: %v\n", err)
 			} else {
 				_ = store.InsertAudit(dataDB, store.AuditEntry{
-					EventType: "zone_remove",
+					EventType: "file_remove",
 					FilePath:  pattern,
 					User:      user,
 				})
@@ -75,24 +75,24 @@ func runZoneRemove(cmd *cobra.Command, args []string) error {
 		}
 
 		// Regenerate the Codex policy file.
-		zones, err := store.ListZones(policyDB)
+		rules, err := store.ListFileRules(policyDB)
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not list zones for Codex policy: %v\n", err)
-		} else if err := codexpolicy.Generate(absRoot, zones); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not list file rules for Codex policy: %v\n", err)
+		} else if err := codexpolicy.Generate(absRoot, rules); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not regenerate Codex policy: %v\n", err)
 		}
 	}
 
 	if flags.JSON {
-		out, _ := json.MarshalIndent(zoneRemoveResult{Pattern: pattern, Removed: removed}, "", "  ")
+		out, _ := json.MarshalIndent(fileRemoveResult{Pattern: pattern, Removed: removed}, "", "  ")
 		fmt.Println(string(out))
 		return nil
 	}
 
 	if removed {
-		fmt.Printf("removed zone: %s\n", pattern)
+		fmt.Printf("removed file rule: %s\n", pattern)
 	} else {
-		fmt.Printf("no zone found for pattern: %s\n", pattern)
+		fmt.Printf("no file rule found for pattern: %s\n", pattern)
 	}
 	return nil
 }

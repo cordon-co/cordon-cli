@@ -35,7 +35,7 @@ func Run(_ context.Context) error {
 
 	requestAccessTool := mcp.NewTool("cordon_request_access",
 		mcp.WithDescription(
-			"Request temporary write access to a file protected by a Cordon zone policy. "+
+			"Request temporary write access to a file protected by a Cordon file policy. "+
 				"Call this tool when a Cordon hook has denied a write operation. "+
 				"The user will be asked to approve or deny the request. "+
 				"Returns a pass ID and expiry time on success.",
@@ -65,10 +65,10 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 
 		reason, _ := req.RequireString("reason")
 
-		// Normalise to repo-relative so it matches how zone patterns are stored.
+		// Normalise to repo-relative so it matches how file rule patterns are stored.
 		filePath := store.NormalizePattern(rawPath, absRoot)
 
-		// Open the policy database and look up the covering zone.
+		// Open the policy database and look up the covering file rule.
 		policyDB, err := store.OpenPolicyDB(absRoot)
 		if err != nil {
 			return nil, fmt.Errorf("cordon: open policy database: %w", err)
@@ -79,20 +79,20 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 			return nil, fmt.Errorf("cordon: migrate policy database: %w", err)
 		}
 
-		zone, err := store.ZoneForPath(policyDB, filePath, absRoot)
+		rule, err := store.FileRuleForPath(policyDB, filePath, absRoot)
 		if err != nil {
-			return nil, fmt.Errorf("cordon: zone lookup: %w", err)
+			return nil, fmt.Errorf("cordon: file rule lookup: %w", err)
 		}
-		if zone == nil {
+		if rule == nil {
 			return mcp.NewToolResultError(
-				fmt.Sprintf("%q is not covered by any Cordon zone — no pass can be issued.", filePath),
+				fmt.Sprintf("%q is not covered by any Cordon file rule — no pass can be issued.", filePath),
 			), nil
 		}
 
 		// Ask the user for confirmation via elicitation.
 		msg := fmt.Sprintf(
-			"Your agent is requesting read/write access to a file protected by a Cordon zone policy.\n\nFile: %s\nZone: %s",
-			filePath, zone.Pattern,
+			"Your agent is requesting read/write access to a file protected by a Cordon file policy.\n\nFile: %s\nFile Rule: %s",
+			filePath, rule.Pattern,
 		)
 		if reason != "" {
 			msg += fmt.Sprintf("\nAgent's Reason: %s", reason)
@@ -158,8 +158,8 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 		}
 
 		p := store.Pass{
-			ZoneID:          zone.ID,
-			Pattern:         zone.Pattern,
+			FileRuleID:      rule.ID,
+			Pattern:         rule.Pattern,
 			FilePath:        filePath,
 			IssuedTo:        "agent",
 			IssuedBy:        store.CurrentOSUser(),
@@ -188,18 +188,18 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 
 		// Audit log — failures are non-fatal.
 		_ = store.InsertAudit(dataDB, store.AuditEntry{
-			EventType: "pass_issue",
-			FilePath:  filePath,
-			ZoneID:    zone.ID,
-			PassID:    issued.ID,
-			User:      store.CurrentOSUser(),
-			Agent:     "mcp",
-			Detail:    fmt.Sprintf("source=mcp_request_access duration=%dm expires_at=%s", defaultMinutes, expiresAtStr),
+			EventType:  "pass_issue",
+			FilePath:   filePath,
+			FileRuleID: rule.ID,
+			PassID:     issued.ID,
+			User:       store.CurrentOSUser(),
+			Agent:      "mcp",
+			Detail:     fmt.Sprintf("source=mcp_request_access duration=%dm expires_at=%s", defaultMinutes, expiresAtStr),
 		})
 
 		result := fmt.Sprintf(
-			"Access granted for %s\nPass ID:  %s\nExpires:  %s\nZone:     %s",
-			filePath, issued.ID, expiresAtStr, zone.Pattern,
+			"Access granted for %s\nPass ID:    %s\nExpires:    %s\nFile Rule:  %s",
+			filePath, issued.ID, expiresAtStr, rule.Pattern,
 		)
 		return mcp.NewToolResultText(result), nil
 	}

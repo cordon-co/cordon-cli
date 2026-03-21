@@ -91,12 +91,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// .cordon/codex-policy.md — generate from current zone list (may be empty on first init).
-	zones, err := store.ListZones(policyDB)
+	// .cordon/codex-policy.md — generate from current file rule list (may be empty on first init).
+	rules, err := store.ListFileRules(policyDB)
 	if err != nil {
-		return fmt.Errorf("init: list zones for Codex policy: %w", err)
+		return fmt.Errorf("init: list file rules for Codex policy: %w", err)
 	}
-	if err := codexpolicy.Generate(absRoot, zones); err != nil {
+	if err := codexpolicy.Generate(absRoot, rules); err != nil {
 		return fmt.Errorf("init: generate Codex policy: %w", err)
 	}
 	codexPolicyPath := filepath.Join(absRoot, ".cordon", "codex-policy.md")
@@ -137,7 +137,7 @@ func shortenHome(path, homeDir string) string {
 }
 
 // promptAndAddGuardrails offers the user the standard set of guardrails.
-// Rules and zones that already exist are skipped (idempotent). If the user
+// Rules and file rules that already exist are skipped (idempotent). If the user
 // declines, nothing is added. The prompt defaults to yes.
 func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 	fmt.Fprintln(cmd.OutOrStdout())
@@ -170,13 +170,13 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 		added++
 	}
 
-	for _, z := range store.StandardGuardrailZones {
-		_, err := store.AddZone(policyDB, z.Pattern, "deny", "standard", user, z.PreventRead)
+	for _, f := range store.StandardGuardrailFileRules {
+		_, err := store.AddFileRule(policyDB, f.Pattern, "deny", "standard", user, f.PreventRead)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue
 			}
-			return fmt.Errorf("add guardrail zone %q: %w", z.Pattern, err)
+			return fmt.Errorf("add guardrail file rule %q: %w", f.Pattern, err)
 		}
 		added++
 	}
@@ -188,4 +188,3 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 	}
 	return nil
 }
-

@@ -4,7 +4,7 @@
 
 We evaluated multiple approaches to enforcing file-level write restrictions on AI agents.
 
-**OS-level sandboxing (sandbox-exec, seccomp-bpf, Landlock):** Policies are loaded at process launch and are immutable at runtime. Changing a zone or issuing a pass would require restarting the agent. More critically, IDE-embedded agents like VS Code Copilot run inside the VS Code process itself — sandboxing the agent means sandboxing the entire IDE.
+**OS-level sandboxing (sandbox-exec, seccomp-bpf, Landlock):** Policies are loaded at process launch and are immutable at runtime. Changing a file rule or issuing a pass would require restarting the agent. More critically, IDE-embedded agents like VS Code Copilot run inside the VS Code process itself — sandboxing the agent means sandboxing the entire IDE.
 
 **Separate Unix user:** Running agents under a restricted user (e.g. `cordon-agent`) and using filesystem permissions to enforce boundaries. Technically sound but requires elevated setup permissions and doesn't work for IDE-embedded agents that share the VS Code process.
 
@@ -23,7 +23,7 @@ The tradeoff is that enforcement strength varies by platform. Claude Code and VS
 The `cordon` binary serves as CLI, hook engine, and MCP server. This was chosen over separate components because:
 
 - The hook (`cordon hook`) must start and complete fast. A compiled Go binary has near-zero startup time. A Node.js or Python script has a cold-start penalty that would add latency to every tool call.
-- No runtime dependencies. The binary runs on any machine without requiring Node, Python, or any other toolchain. This matters for the install script (`curl | sh`) and for trust — users can inspect a single binary rather than a node_modules tree.
+- No runtime dependencies. The binary runs on any machine without requiring Node, Python, or any toolchain. This matters for the install script (`curl | sh`) and for trust — users can inspect a single binary rather than a node_modules tree.
 - The MCP server (`cordon --mcp`) runs as a long-lived stdio process. Go handles this naturally with goroutines for concurrent MCP requests.
 - Cross-compilation is trivial. `GOOS=darwin GOARCH=arm64 go build` produces a macOS arm64 binary from any platform. GitHub Actions builds all targets in a single workflow.
 - One binary means one version number, one release artifact per platform, and one thing to install.
@@ -54,7 +54,7 @@ Policy and audit data are stored in SQLite databases rather than flat files (JSO
 
 Policy definitions and operational data are separated into different databases in different locations.
 
-**`.cordon/policy.db` (repo-level, unauthenticated users):** Contains only zone definitions. Changes infrequently (only when zones are added or removed). Small enough to optionally commit to the repo. Other developers who clone the repo get the policy.
+**`.cordon/policy.db` (repo-level, unauthenticated users):** Contains only file rule definitions. Changes infrequently (only when rules are added or removed). Small enough to optionally commit to the repo. Other developers who clone the repo get the policy.
 
 **`~/.cordon/repos/<repo-hash>/data.db` (user-level):** Contains audit logs, pass state, demarcation history, hook invocation logs. Changes on every hook invocation. Never committed to the repo. For authenticated users, synced to the cloud.
 
@@ -87,7 +87,7 @@ Codex lacks pre-execution hooks. Its only hook is `agent-turn-complete` (notify,
 The `model_instructions_file` approach works because:
 
 - Codex reliably follows explicit instructions in its model instructions file. Tested and confirmed: Codex refuses to write to denied files and tells the user to change the policy.
-- The instructions file is a plain markdown file at `.cordon/codex-policy.md` that Cordon regenerates whenever zones change. The file content is read by Codex on each turn, so deny list changes take effect without session restart (even though the config.toml reference itself requires restart).
+- The instructions file is a plain markdown file at `.cordon/codex-policy.md` that Cordon regenerates whenever file rules change. The file content is read by Codex on each turn, so deny list changes take effect without session restart (even though the config.toml reference itself requires restart).
 - The `agent-turn-complete` notify hook allows Cordon to check for violations after each turn and alert the user if the model ignored the instructions.
 
 This is soft enforcement. The model can theoretically ignore the instructions. This is documented honestly in the enforcement matrix and competitive positioning.
@@ -97,17 +97,17 @@ This is soft enforcement. The model can theoretically ignore the instructions. T
 The Cordon MCP server runs as `cordon --mcp` via stdio rather than as a hosted HTTP MCP endpoint (for the open source / local mode).
 
 - Stdio MCP servers are spawned by the agent client (Claude Code, etc.) as a subprocess. No port management, no daemon, no process to keep alive.
-- The MCP process has direct access to the local policy database. No network call required to check a zone or register a demarcation.
+- The MCP process has direct access to the local policy database. No network call required to check a file rule or register a demarcation.
 - The agent's MCP config is the same regardless of whether the user is authenticated or not: `{"command": "cordon", "args": ["--mcp"]}`. The binary handles the policy source internally.
 - For cloud-connected teams, the hosted MCP at mcp.cordon.sh exists as an alternative, but the local stdio MCP is the default.
 
-## Why Guardian Zones Are Trust-Based
+## Why Guardian Rules Are Trust-Based
 
-A developer can technically bypass guardian zone enforcement by editing the Codex instructions file, deleting the hook entry, or modifying the policy database. Cordon does not attempt to make this impossible.
+A developer can technically bypass guardian rule enforcement by editing the Codex instructions file, deleting the hook entry, or modifying the policy database. Cordon does not attempt to make this impossible.
 
 This mirrors every other access control system in software development. Developers can bypass branch protection, skip PR reviews, ignore CODEOWNERS. The purpose of these systems is to establish norms, make violations visible, and create accountability — not to be tamper-proof against malicious insiders.
 
-Cordon provides hard enforcement for Claude Code and VS Code agents (hooks block writes at the tool level — circumvention requires actively deleting or modifying config). Codex enforcement is model-compliant. In all cases, the audit trail captures when enforcement stops working for a user (their agent writing to zoned files without passes), making circumvention visible to guardians.
+Cordon provides hard enforcement for Claude Code and VS Code agents (hooks block writes at the tool level — circumvention requires actively deleting or modifying config). Codex enforcement is model-compliant. In all cases, the audit trail captures when enforcement stops working for a user (their agent writing to protected files without passes), making circumvention visible to guardians.
 
 ## Why the Hook Checks the Tool Name Internally
 

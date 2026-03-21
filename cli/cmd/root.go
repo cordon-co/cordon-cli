@@ -7,7 +7,7 @@ import (
 
 	"github.com/cordon-co/cordon/cmd/command"
 	"github.com/cordon-co/cordon/cmd/pass"
-	"github.com/cordon-co/cordon/cmd/zone"
+	"github.com/cordon-co/cordon/cmd/file"
 	"github.com/cordon-co/cordon/internal/flags"
 	"github.com/cordon-co/cordon/internal/mcpserver"
 	"github.com/spf13/cobra"
@@ -18,7 +18,7 @@ var mcpMode bool
 var rootCmd = &cobra.Command{
 	Use:   "cordon",
 	Short: "Team-wide access policies for AI coding agents",
-	Long: `Cordon enforces file-level write restrictions on AI agents. Zones define protected files, folders or patterns; passes grant
+	Long: `Cordon enforces file-level write restrictions on AI agents. File rules define protected files, folders or patterns; passes grant
 temporary agent access; the audit log captures every enforcement decision.`,
 	// Root RunE handles two cases:
 	//   cordon --mcp   → launch MCP server
@@ -57,7 +57,7 @@ func init() {
 		logCmd,
 		removeCmd,
 		versionCmd,
-		zone.Cmd,
+		file.Cmd,
 		pass.Cmd,
 		command.Cmd,
 	)

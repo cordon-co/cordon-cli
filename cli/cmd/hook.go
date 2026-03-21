@@ -74,43 +74,43 @@ func buildPolicyChecker() hook.PolicyChecker {
 			return true, "" // fail-open
 		}
 
-		zone, err := store.ZoneForPath(policyDB, filePath, absRoot)
+		rule, err := store.FileRuleForPath(policyDB, filePath, absRoot)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cordon: policy check: zone lookup: %v\n", err)
+			fmt.Fprintf(os.Stderr, "cordon: policy check: file rule lookup: %v\n", err)
 			return true, "" // fail-open
 		}
-		if zone == nil {
-			// File is not in any zone — allow.
+		if rule == nil {
+			// File is not covered by any file rule — allow.
 			return true, ""
 		}
 
-		// File is in a zone. Check for an active pass in the data database.
+		// File is covered by a file rule. Check for an active pass in the data database.
 		dataDB, err := store.OpenDataDB(absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: open data db: %v\n", err)
-			return false, "" // in zone, data DB unavailable — deny
+			return false, "" // has file rule, data DB unavailable — deny
 		}
 		defer dataDB.Close()
 
 		if err := store.MigrateDataDB(dataDB); err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: migrate data db: %v\n", err)
-			return false, "" // in zone, data DB unavailable — deny
+			return false, "" // has file rule, data DB unavailable — deny
 		}
 
 		pass, err := store.ActivePassForPath(dataDB, filePath, absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: pass lookup: %v\n", err)
-			return false, "" // in zone, pass lookup failed — deny
+			return false, "" // has file rule, pass lookup failed — deny
 		}
 		if pass == nil {
-			return false, "" // in zone, no active pass — deny
+			return false, "" // has file rule, no active pass — deny
 		}
-		return true, pass.ID // in zone, active pass — allow
+		return true, pass.ID // has file rule, active pass — allow
 	}
 }
 
-// buildReadChecker returns a ReadChecker that denies reads of files in zones
-// where prevent_read=true, unless an active pass covers the file.
+// buildReadChecker returns a ReadChecker that denies reads of files covered
+// by file rules where prevent_read=true, unless an active pass covers the file.
 //
 // Fails open on any infrastructure error.
 func buildReadChecker() hook.ReadChecker {
@@ -130,25 +130,25 @@ func buildReadChecker() hook.ReadChecker {
 			return true, "" // fail-open
 		}
 
-		zone, err := store.ZoneForPath(policyDB, filePath, absRoot)
-		if err != nil || zone == nil || !zone.PreventRead {
-			return true, "" // fail-open or not in a prevent-read zone
+		rule, err := store.FileRuleForPath(policyDB, filePath, absRoot)
+		if err != nil || rule == nil || !rule.PreventRead {
+			return true, "" // fail-open or not in a prevent-read file rule
 		}
 
-		// File is in a prevent-read zone. Check for an active pass.
+		// File is in a prevent-read file rule. Check for an active pass.
 		dataDB, err := store.OpenDataDB(absRoot)
 		if err != nil {
-			return false, "" // in zone, data DB unavailable — deny
+			return false, "" // has file rule, data DB unavailable — deny
 		}
 		defer dataDB.Close()
 
 		if err := store.MigrateDataDB(dataDB); err != nil {
-			return false, "" // in zone, data DB unavailable — deny
+			return false, "" // has file rule, data DB unavailable — deny
 		}
 
 		pass, err := store.ActivePassForPath(dataDB, filePath, absRoot)
 		if err != nil || pass == nil {
-			return false, "" // in zone, no active pass — deny
+			return false, "" // has file rule, no active pass — deny
 		}
 		return true, pass.ID
 	}

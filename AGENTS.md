@@ -15,15 +15,15 @@ The CLI is the core of the product. The extension is a thin UI layer that calls 
 ## Core Concepts
 
 - **Perimeter**: the top-level policy boundary for a repository
-- **Zone**: a file, folder, or glob pattern protected by an access policy. Standard zones (any member) or guardian zones (guardian/admin only)
-- **Pass**: a temporary access grant allowing an agent to write to a zoned file. Configured with a duration
+- **File Rule**: a file, folder, or glob pattern protected by an access policy. Standard rules (any member) or guardian rules (guardian/admin only)
+- **Pass**: a temporary access grant allowing an agent to write to a protected file. Configured with a duration
 - **Demarcation**: a registered declaration of what an agent is currently working on, visible to the team via CodeLens and the demarcations panel
 
 ## Key Architecture Decisions
 
 - The CLI binary handles all business logic. The extension never calls the API directly — it calls CLI subcommands
 - `cordon hook` is invoked as a PreToolUse hook by Claude Code and VS Code agents. It reads JSON from stdin, checks policy, returns allow/deny
-- `cordon --mcp` runs as a stdio MCP server providing zone checks, pass requests, and demarcation registration
+- `cordon --mcp` runs as a stdio MCP server providing file rule checks, pass requests, and demarcation registration
 - Policy is stored in SQLite: `.cordon/policy.db` in the repo for unauthenticated users, `~/.cordon/repos/<repo-hash>/policy-cache.db` for authenticated users synced from the cloud
 - Operational data (audit logs, pass state, demarcation history) is stored in `~/.cordon/repos/<repo-hash>/data.db` and never committed to the repo
 - User credentials and global preferences are stored in `~/.cordon/`

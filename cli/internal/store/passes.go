@@ -11,9 +11,9 @@ import (
 // Pass is a temporary access grant stored in data.db.
 type Pass struct {
 	ID              string
-	ZoneID          string
+	FileRuleID      string
 	Pattern         string
-	FilePath        string // empty string if zone-wide
+	FilePath        string // empty string if rule-wide
 	IssuedTo        string
 	IssuedBy        string
 	Status          string // "active", "expired", "revoked"
@@ -34,10 +34,10 @@ func IssuePass(db *sql.DB, p Pass) error {
 
 	_, err = db.Exec(
 		`INSERT INTO passes
-		 (id, zone_id, pattern, file_path, issued_to, issued_by, status,
+		 (id, file_rule_id, pattern, file_path, issued_to, issued_by, status,
 		  duration_minutes, issued_at, expires_at, revoked_at, revoked_by)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.ZoneID, p.Pattern, p.FilePath, p.IssuedTo, p.IssuedBy, p.Status,
+		p.ID, p.FileRuleID, p.Pattern, p.FilePath, p.IssuedTo, p.IssuedBy, p.Status,
 		durationMinutesToSQL(p.DurationMinutes), p.IssuedAt, p.ExpiresAt,
 		p.RevokedAt, p.RevokedBy,
 	)
@@ -58,7 +58,7 @@ func ListAllPasses(db *sql.DB) ([]Pass, error) {
 }
 
 func listPassesWhere(db *sql.DB, where string) ([]Pass, error) {
-	q := `SELECT id, zone_id, pattern, file_path, issued_to, issued_by, status,
+	q := `SELECT id, file_rule_id, pattern, file_path, issued_to, issued_by, status,
 	             duration_minutes, issued_at, expires_at, revoked_at, revoked_by
 	      FROM passes ` + where + ` ORDER BY issued_at DESC`
 	rows, err := db.Query(q)
@@ -102,17 +102,17 @@ func RevokePass(db *sql.DB, passID, revokedBy string) (bool, error) {
 // filePath, or nil if none exists.
 //
 // repoRoot is the absolute repo root used to relativize filePath before
-// matching — consistent with how zones are stored (relative patterns).
+// matching — consistent with how file rules are stored (relative patterns).
 //
 // A pass covers filePath if:
 //   - The pass is file-scoped (file_path != '') and matches filePath (exact or
 //     relative), OR
-//   - The pass is zone-wide (file_path == '') and its zone pattern covers filePath.
+//   - The pass is rule-wide (file_path == '') and its file rule pattern covers filePath.
 func ActivePassForPath(db *sql.DB, filePath, repoRoot string) (*Pass, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	rows, err := db.Query(
-		`SELECT id, zone_id, pattern, file_path, issued_to, issued_by, status,
+		`SELECT id, file_rule_id, pattern, file_path, issued_to, issued_by, status,
 		        duration_minutes, issued_at, expires_at, revoked_at, revoked_by
 		 FROM passes
 		 WHERE status = 'active'
@@ -138,8 +138,8 @@ func ActivePassForPath(db *sql.DB, filePath, repoRoot string) (*Pass, error) {
 				return &p, nil
 			}
 		} else {
-			// Zone-wide pass: check whether the zone pattern covers this file.
-			if pathMatchesZone(p.Pattern, filePath, repoRoot) {
+			// Rule-wide pass: check whether the file rule pattern covers this file.
+			if pathMatchesFileRule(p.Pattern, filePath, repoRoot) {
 				return &p, nil
 			}
 		}
@@ -187,7 +187,7 @@ func scanPass(rows *sql.Rows) (Pass, error) {
 	var p Pass
 	var dur sql.NullInt64
 	err := rows.Scan(
-		&p.ID, &p.ZoneID, &p.Pattern, &p.FilePath,
+		&p.ID, &p.FileRuleID, &p.Pattern, &p.FilePath,
 		&p.IssuedTo, &p.IssuedBy, &p.Status,
 		&dur, &p.IssuedAt, &p.ExpiresAt, &p.RevokedAt, &p.RevokedBy,
 	)

@@ -19,9 +19,9 @@ var issueDuration string
 var issueCmd = &cobra.Command{
 	Use:   "issue",
 	Short: "Issue a temporary access pass",
-	Long: `Issue a temporary pass granting an agent write access to a zoned file.
+	Long: `Issue a temporary pass granting an agent write access to a protected file.
 
-The file must already be covered by a Cordon zone. Duration formats:
+The file must already be covered by a Cordon file rule. Duration formats:
   60m        60 minutes
   24h        24 hours
   7d         7 days
@@ -55,10 +55,10 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pass issue: resolve repo root: %w", err)
 	}
 
-	// Normalize the file path to repo-relative (consistent with how zones are stored).
+	// Normalize the file path to repo-relative (consistent with how file rules are stored).
 	issueFile = store.NormalizePattern(issueFile, absRoot)
 
-	// Validate the file is inside a zone.
+	// Validate the file is covered by a file rule.
 	policyDB, err := store.OpenPolicyDB(absRoot)
 	if err != nil {
 		return fmt.Errorf("pass issue: open policy database: %w", err)
@@ -69,12 +69,12 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pass issue: migrate policy database: %w", err)
 	}
 
-	zone, err := store.ZoneForPath(policyDB, issueFile, absRoot)
+	rule, err := store.FileRuleForPath(policyDB, issueFile, absRoot)
 	if err != nil {
-		return fmt.Errorf("pass issue: zone lookup: %w", err)
+		return fmt.Errorf("pass issue: file rule lookup: %w", err)
 	}
-	if zone == nil {
-		return fmt.Errorf("pass issue: %q is not covered by any zone — add a zone first with: cordon zone add <pattern>", issueFile)
+	if rule == nil {
+		return fmt.Errorf("pass issue: %q is not covered by any file rule — add one first with: cordon file add <pattern>", issueFile)
 	}
 
 	// Parse the requested duration.
@@ -91,8 +91,8 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 	}
 
 	p := store.Pass{
-		ZoneID:          zone.ID,
-		Pattern:         zone.Pattern,
+		FileRuleID:      rule.ID,
+		Pattern:         rule.Pattern,
 		FilePath:        issueFile,
 		IssuedTo:        user,
 		IssuedBy:        user,
@@ -132,12 +132,12 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 
 	// Audit log.
 	_ = store.InsertAudit(dataDB, store.AuditEntry{
-		EventType: "pass_issue",
-		FilePath:  issueFile,
-		ZoneID:    zone.ID,
-		PassID:    issued.ID,
-		User:      user,
-		Detail:    fmt.Sprintf("duration=%s expires_at=%s", issueDuration, expiresAtStr),
+		EventType:  "pass_issue",
+		FilePath:   issueFile,
+		FileRuleID: rule.ID,
+		PassID:     issued.ID,
+		User:       user,
+		Detail:     fmt.Sprintf("duration=%s expires_at=%s", issueDuration, expiresAtStr),
 	})
 
 	if flags.JSON {
@@ -151,9 +151,9 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		expiry = expiresAt.Local().Format("2006-01-02 15:04:05")
 	}
 	fmt.Printf("pass issued for %s\n", issueFile)
-	fmt.Printf("  id:      %s\n", issued.ID)
-	fmt.Printf("  zone:    %s\n", zone.Pattern)
-	fmt.Printf("  expires: %s\n", expiry)
+	fmt.Printf("  id:        %s\n", issued.ID)
+	fmt.Printf("  file rule: %s\n", rule.Pattern)
+	fmt.Printf("  expires:   %s\n", expiry)
 	return nil
 }
 

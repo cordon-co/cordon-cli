@@ -1,4 +1,4 @@
-package zone
+package file
 
 import (
 	"encoding/json"
@@ -14,35 +14,35 @@ import (
 )
 
 var (
-	guardian     bool
+	guardian    bool
 	preventRead bool
-	allow        bool
+	allow       bool
 )
 
 var addCmd = &cobra.Command{
 	Use:   "add <pattern>",
-	Short: "Add a zone",
+	Short: "Add a file rule",
 	Long:  "Protect a file, folder, or glob pattern from agent writes.",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runZoneAdd,
+	RunE:  runFileAdd,
 }
 
 func init() {
-	addCmd.Flags().BoolVar(&guardian, "guardian", false, "Create a guardian zone (requires guardian/admin role)")
+	addCmd.Flags().BoolVar(&guardian, "guardian", false, "Create a guardian file rule (requires guardian/admin role)")
 	addCmd.Flags().BoolVar(&preventRead, "prevent-read", false, "Also block agent read access (e.g. for credential files)")
-	addCmd.Flags().BoolVar(&allow, "allow", false, "Create an allow zone (permits access, overrides deny zones)")
+	addCmd.Flags().BoolVar(&allow, "allow", false, "Create an allow file rule (permits access, overrides deny rules)")
 }
 
-type zoneAddResult struct {
-	Zone store.Zone `json:"zone"`
+type fileAddResult struct {
+	FileRule store.FileRule `json:"file_rule"`
 }
 
-func runZoneAdd(cmd *cobra.Command, args []string) error {
+func runFileAdd(cmd *cobra.Command, args []string) error {
 	pattern := args[0]
 
 	root, warn, err := reporoot.Find()
 	if err != nil {
-		return fmt.Errorf("zone add: find repo root: %w", err)
+		return fmt.Errorf("file add: find repo root: %w", err)
 	}
 	if warn != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "warning:", warn)
@@ -50,30 +50,30 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return fmt.Errorf("zone add: resolve repo root: %w", err)
+		return fmt.Errorf("file add: resolve repo root: %w", err)
 	}
 
 	policyDB, err := store.OpenPolicyDB(absRoot)
 	if err != nil {
-		return fmt.Errorf("zone add: open policy database: %w", err)
+		return fmt.Errorf("file add: open policy database: %w", err)
 	}
 	defer policyDB.Close()
 
 	if err := store.MigratePolicyDB(policyDB); err != nil {
-		return fmt.Errorf("zone add: migrate policy database: %w", err)
+		return fmt.Errorf("file add: migrate policy database: %w", err)
 	}
 
 	if allow && preventRead {
-		return fmt.Errorf("zone add: --allow and --prevent-read cannot be used together (allow zones permit access)")
+		return fmt.Errorf("file add: --allow and --prevent-read cannot be used together (allow rules permit access)")
 	}
 
-	zoneAccess := "deny"
+	fileAccess := "deny"
 	if allow {
-		zoneAccess = "allow"
+		fileAccess = "allow"
 	}
-	zoneAuthority := "standard"
+	fileAuthority := "standard"
 	if guardian {
-		zoneAuthority = "guardian"
+		fileAuthority = "guardian"
 	}
 
 	user := store.CurrentOSUser()
@@ -83,12 +83,12 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 	// Glob patterns and already-relative patterns are unchanged.
 	pattern = store.NormalizePattern(pattern, absRoot)
 
-	z, err := store.AddZone(policyDB, pattern, zoneAccess, zoneAuthority, user, preventRead)
+	f, err := store.AddFileRule(policyDB, pattern, fileAccess, fileAuthority, user, preventRead)
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicatePattern) {
-			return fmt.Errorf("zone already exists: %s", pattern)
+			return fmt.Errorf("file rule already exists: %s", pattern)
 		}
-		return fmt.Errorf("zone add: %w", err)
+		return fmt.Errorf("file add: %w", err)
 	}
 
 	// Log to audit database.
@@ -101,40 +101,40 @@ func runZoneAdd(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not migrate data database: %v\n", err)
 		} else {
 			_ = store.InsertAudit(dataDB, store.AuditEntry{
-				EventType: "zone_add",
-				ZoneID:    z.ID,
-				FilePath:  z.Pattern,
-				User:      user,
-				Detail:    fmt.Sprintf("zone_access=%s zone_authority=%s", z.ZoneType, z.ZoneAuthority),
+				EventType:  "file_add",
+				FileRuleID: f.ID,
+				FilePath:   f.Pattern,
+				User:       user,
+				Detail:     fmt.Sprintf("file_access=%s file_authority=%s", f.FileType, f.FileAuthority),
 			})
 		}
 	}
 
 	// Regenerate the Codex policy file.
-	zones, err := store.ListZones(policyDB)
+	rules, err := store.ListFileRules(policyDB)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not list zones for Codex policy: %v\n", err)
-	} else if err := codexpolicy.Generate(absRoot, zones); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not list file rules for Codex policy: %v\n", err)
+	} else if err := codexpolicy.Generate(absRoot, rules); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not regenerate Codex policy: %v\n", err)
 	}
 
 	if flags.JSON {
-		out, _ := json.MarshalIndent(zoneAddResult{Zone: *z}, "", "  ")
+		out, _ := json.MarshalIndent(fileAddResult{FileRule: *f}, "", "  ")
 		fmt.Println(string(out))
 		return nil
 	}
 
-	zoneLabel := "deny zone"
-	if z.ZoneType == "allow" {
-		zoneLabel = "allow zone"
+	ruleLabel := "deny rule"
+	if f.FileType == "allow" {
+		ruleLabel = "allow rule"
 	}
-	if z.ZoneAuthority == "guardian" {
-		zoneLabel += " (guardian)"
+	if f.FileAuthority == "guardian" {
+		ruleLabel += " (guardian)"
 	}
 	readLabel := ""
-	if z.PreventRead {
+	if f.PreventRead {
 		readLabel = " (read+write)"
 	}
-	fmt.Printf("added %s%s: %s\n", zoneLabel, readLabel, z.Pattern)
+	fmt.Printf("added %s%s: %s\n", ruleLabel, readLabel, f.Pattern)
 	return nil
 }

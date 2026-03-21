@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// pathMatchesZone reports whether filePath is covered by the given zone pattern.
+// pathMatchesFileRule reports whether filePath is covered by the given file rule pattern.
 //
 // repoRoot is the absolute path to the repository root. When provided, the
 // absolute filePath is first converted to a repo-relative path and matching
@@ -16,10 +16,10 @@ import (
 // Three matching strategies are tried against each path form:
 //  1. Exact match after path cleaning.
 //  2. Single-level glob via filepath.Match (e.g. "src/*.go", "*.gitignore").
-//  3. Directory prefix match: filePath is somewhere inside the zone directory.
+//  3. Directory prefix match: filePath is somewhere inside the rule directory.
 //
 // Note: double-star (**) globs are not yet supported.
-func pathMatchesZone(pattern, filePath, repoRoot string) bool {
+func pathMatchesFileRule(pattern, filePath, repoRoot string) bool {
 	if matchOnePath(pattern, filePath) {
 		return true
 	}
@@ -49,7 +49,7 @@ func matchOnePath(pattern, filePath string) bool {
 		return true
 	}
 
-	// 3. Directory prefix: filePath is inside the zone directory.
+	// 3. Directory prefix: filePath is inside the rule directory.
 	// We add the OS separator to both to avoid false positives where the
 	// pattern is a prefix of the file name (e.g. "src" should not match "src2/main.go").
 	prefix := cleanPattern + string(filepath.Separator)

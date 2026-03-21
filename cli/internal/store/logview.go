@@ -16,15 +16,15 @@ type LogFilter struct {
 
 // UnifiedEntry is a normalised view of a row from either hook_log or audit_log.
 type UnifiedEntry struct {
-	Time      time.Time `json:"time"`
-	EventType string    `json:"event_type"` // "hook_allow", "hook_deny", "zone_add", …
-	ToolName  string    `json:"tool_name,omitempty"`
-	FilePath  string    `json:"file_path,omitempty"`
-	ZoneID    string    `json:"zone_id,omitempty"`
-	PassID    string    `json:"pass_id,omitempty"`
-	User      string    `json:"user,omitempty"`
-	Agent     string    `json:"agent,omitempty"`
-	Detail    string    `json:"detail,omitempty"`
+	Time       time.Time `json:"time"`
+	EventType  string    `json:"event_type"` // "hook_allow", "hook_deny", "file_add", …
+	ToolName   string    `json:"tool_name,omitempty"`
+	FilePath   string    `json:"file_path,omitempty"`
+	FileRuleID string    `json:"file_rule_id,omitempty"`
+	PassID     string    `json:"pass_id,omitempty"`
+	User       string    `json:"user,omitempty"`
+	Agent      string    `json:"agent,omitempty"`
+	Detail     string    `json:"detail,omitempty"`
 }
 
 // ListUnifiedLog queries hook_log and (unless DeniedOnly) audit_log from the
@@ -98,7 +98,7 @@ func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 }
 
 func queryAuditLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
-	q := `SELECT event_type, tool_name, file_path, zone_id, pass_id, user, agent, detail, timestamp
+	q := `SELECT event_type, tool_name, file_path, file_rule_id, pass_id, user, agent, detail, timestamp
 	      FROM audit_log WHERE 1=1`
 	var args []any
 
@@ -122,7 +122,7 @@ func queryAuditLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 	for rows.Next() {
 		var e UnifiedEntry
 		var ts string
-		if err := rows.Scan(&e.EventType, &e.ToolName, &e.FilePath, &e.ZoneID, &e.PassID,
+		if err := rows.Scan(&e.EventType, &e.ToolName, &e.FilePath, &e.FileRuleID, &e.PassID,
 			&e.User, &e.Agent, &e.Detail, &ts); err != nil {
 			return nil, fmt.Errorf("store: scan audit_log: %w", err)
 		}

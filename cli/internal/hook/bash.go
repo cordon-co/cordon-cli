@@ -121,8 +121,8 @@ func reSedInPlaceTargets(command string) []string {
 
 // bashReadTargets parses a bash command string and returns file paths that the
 // command would read. Only simple, unambiguous read patterns are detected;
-// the goal is defence-in-depth for prevent-read zones (the Read tool block
-// is the primary enforcement path).
+// the goal is defence-in-depth for prevent-read file rules (the Read tool
+// block is the primary enforcement path).
 //
 // Recognised patterns:
 //

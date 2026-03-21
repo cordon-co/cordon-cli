@@ -120,7 +120,7 @@ func printPassTable(header string, passes []store.Pass) {
 	for _, p := range passes {
 		file := p.FilePath
 		if file == "" {
-			file = p.Pattern + " (zone-wide)"
+			file = p.Pattern + " (rule-wide)"
 		}
 		if len(file) > 40 {
 			file = "…" + file[len(file)-39:]

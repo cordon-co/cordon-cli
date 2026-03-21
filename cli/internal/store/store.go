@@ -1,6 +1,6 @@
 // Package store manages the two SQLite databases used by cordon.
 //
-// Policy database (.cordon/policy.db in the repo): stores zone definitions.
+// Policy database (.cordon/policy.db in the repo): stores file rule definitions.
 // Data database (~/.cordon/repos/<hash>/data.db): stores audit logs, pass
 // state, and demarcation history. Never committed to the repo.
 package store

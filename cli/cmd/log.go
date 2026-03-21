@@ -168,10 +168,10 @@ func logEventLabel(eventType string) (label, color string) {
 		return "DENY", boldRed
 	case "hook_allow":
 		return "ALLOW", green
-	case "zone_add":
-		return "ZONE+", yellow
-	case "zone_remove":
-		return "ZONE-", red
+	case "file_add":
+		return "FILE+", yellow
+	case "file_remove":
+		return "FILE-", red
 	case "pass_issue":
 		return "PASS+", cyan
 	case "pass_revoke":
@@ -224,7 +224,7 @@ func writeLogCSV(w io.Writer, entries []store.UnifiedEntry) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
 		"timestamp", "event_type", "tool_name", "file_path",
-		"zone_id", "pass_id", "user", "agent", "detail",
+		"file_rule_id", "pass_id", "user", "agent", "detail",
 	}); err != nil {
 		return err
 	}
@@ -234,7 +234,7 @@ func writeLogCSV(w io.Writer, entries []store.UnifiedEntry) error {
 			e.EventType,
 			e.ToolName,
 			e.FilePath,
-			e.ZoneID,
+			e.FileRuleID,
 			e.PassID,
 			e.User,
 			e.Agent,

@@ -8,16 +8,16 @@ import (
 
 // AuditEntry is a single row written to the audit_log table.
 type AuditEntry struct {
-	EventType string // 'hook_allow', 'hook_deny', 'zone_add', 'zone_remove',
+	EventType  string // 'hook_allow', 'hook_deny', 'file_add', 'file_remove',
 	//                   'pass_issue', 'pass_revoke', 'pass_expire', 'integrity_check'
-	ToolName  string // agent tool name for hook events; empty otherwise
-	FilePath  string // file involved, if applicable
-	ZoneID    string // zone involved, if applicable
-	PassID    string // pass involved, if applicable
-	User      string // user performing the action
-	Agent     string // agent platform identifier for hook events
-	Detail    string // additional context (deny reason, etc.)
-	Timestamp string // ISO 8601; auto-set to now if empty
+	ToolName   string // agent tool name for hook events; empty otherwise
+	FilePath   string // file involved, if applicable
+	FileRuleID string // file rule involved, if applicable
+	PassID     string // pass involved, if applicable
+	User       string // user performing the action
+	Agent      string // agent platform identifier for hook events
+	Detail     string // additional context (deny reason, etc.)
+	Timestamp  string // ISO 8601; auto-set to now if empty
 }
 
 // InsertAudit appends a structured event to the audit_log table.
@@ -28,9 +28,9 @@ func InsertAudit(db *sql.DB, e AuditEntry) error {
 	}
 	_, err := db.Exec(
 		`INSERT INTO audit_log
-		 (event_type, tool_name, file_path, zone_id, pass_id, user, agent, detail, timestamp)
+		 (event_type, tool_name, file_path, file_rule_id, pass_id, user, agent, detail, timestamp)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.EventType, e.ToolName, e.FilePath, e.ZoneID, e.PassID,
+		e.EventType, e.ToolName, e.FilePath, e.FileRuleID, e.PassID,
 		e.User, e.Agent, e.Detail, e.Timestamp,
 	)
 	if err != nil {
@@ -43,7 +43,7 @@ func InsertAudit(db *sql.DB, e AuditEntry) error {
 // It is used by 'cordon log'; more filtering options can be added later.
 func ListAudit(db *sql.DB) ([]AuditEntry, error) {
 	rows, err := db.Query(
-		`SELECT event_type, tool_name, file_path, zone_id, pass_id, user, agent, detail, timestamp
+		`SELECT event_type, tool_name, file_path, file_rule_id, pass_id, user, agent, detail, timestamp
 		 FROM audit_log ORDER BY timestamp DESC`,
 	)
 	if err != nil {
@@ -55,7 +55,7 @@ func ListAudit(db *sql.DB) ([]AuditEntry, error) {
 	for rows.Next() {
 		var e AuditEntry
 		if err := rows.Scan(
-			&e.EventType, &e.ToolName, &e.FilePath, &e.ZoneID, &e.PassID,
+			&e.EventType, &e.ToolName, &e.FilePath, &e.FileRuleID, &e.PassID,
 			&e.User, &e.Agent, &e.Detail, &e.Timestamp,
 		); err != nil {
 			return nil, fmt.Errorf("store: scan audit entry: %w", err)

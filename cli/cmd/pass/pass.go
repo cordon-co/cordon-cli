@@ -7,7 +7,7 @@ import "github.com/spf13/cobra"
 var Cmd = &cobra.Command{
 	Use:   "pass",
 	Short: "Manage temporary access passes",
-	Long:  "Issue, list, and revoke passes that grant agents temporary write access to zoned files.",
+	Long:  "Issue, list, and revoke passes that grant agents temporary write access to protected files.",
 }
 
 func init() {

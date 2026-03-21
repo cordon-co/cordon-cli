@@ -29,9 +29,9 @@ const (
 // (from the hook payload), which is used to locate the policy database.
 //
 // Return values:
-//   - allowed=true,  passID=""    — file is not in any zone (allow)
-//   - allowed=true,  passID="…"   — file is in a zone and covered by an active pass (allow)
-//   - allowed=false, passID=""    — file is in a zone with no active pass (deny)
+//   - allowed=true,  passID=""    — file is not covered by any file rule (allow)
+//   - allowed=true,  passID="…"   — file is covered by a file rule and has an active pass (allow)
+//   - allowed=false, passID=""    — file is covered by a file rule with no active pass (deny)
 //
 // On infrastructure errors (DB unreadable, etc.) the checker should return
 // (true, "") to fail-open per Cordon's fail-open policy.
@@ -50,19 +50,19 @@ type Event struct {
 	Cwd       string // cwd from the hook payload; used by the logger for DB path discovery
 }
 
-// ReadChecker checks whether a read of filePath from a prevent-read zone
+// ReadChecker checks whether a read of filePath from a prevent-read file rule
 // should be allowed. The signature is identical to PolicyChecker.
 //
 // Return values:
-//   - allowed=true  — file is not in a prevent-read zone, or a pass is active
-//   - allowed=false — file is in a prevent-read zone with no active pass
+//   - allowed=true  — file is not in a prevent-read file rule, or a pass is active
+//   - allowed=false — file is in a prevent-read file rule with no active pass
 //
 // A nil ReadChecker allows all reads (fail-open).
 type ReadChecker func(filePath, cwd string) (allowed bool, passID string)
 
 // writingTools is the set of tool names that constitute write operations and
-// are subject to zone enforcement. Non-writing tools are always allowed but
-// still logged.
+// are subject to file rule enforcement. Non-writing tools are always allowed
+// but still logged.
 // VS Code fires hooks on all tools regardless of matcher; this map prevents
 // non-writing tools from being denied.
 var writingTools = map[string]bool{
@@ -86,8 +86,8 @@ var writingTools = map[string]bool{
 }
 
 // readingTools is the set of tool names that read file content and are subject
-// to prevent-read zone enforcement. Bash read commands are handled separately
-// in evaluateBash via bashReadTargets.
+// to prevent-read file rule enforcement. Bash read commands are handled
+// separately in evaluateBash via bashReadTargets.
 var readingTools = map[string]bool{
 	// Claude Code
 	"Read":         true,
@@ -202,7 +202,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 	}
 	filePath := inp.effectivePath()
 
-	// Reading tools: check against prevent-read zones.
+	// Reading tools: check against prevent-read file rules.
 	if readingTools[payload.ToolName] {
 		allowed, _ := checkRead(rdChecker, filePath, payload.Cwd)
 		if !allowed {
@@ -238,7 +238,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		}, nil
 	}
 
-	// Check the file against the policy database (zones + passes).
+	// Check the file against the policy database (file rules + passes).
 	allowed, passID := checkPolicy(checker, filePath, payload.Cwd)
 
 	if allowed {
@@ -309,7 +309,7 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 		}
 	}
 
-	// Check read targets against prevent-read zones.
+	// Check read targets against prevent-read file rules.
 	readTargets := bashReadTargets(command)
 	for _, target := range readTargets {
 		allowed, _ := checkRead(rdChecker, target, payload.Cwd)
@@ -343,8 +343,8 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 		}, nil
 	}
 
-	// Check each target against the policy database. Deny if any target is in
-	// a zone without an active pass. We deny on the first violation found.
+	// Check each target against the policy database. Deny if any target is
+	// covered by a file rule without an active pass. We deny on the first violation found.
 	for _, target := range targets {
 		allowed, _ := checkPolicy(checker, target, payload.Cwd)
 		if !allowed {
@@ -469,13 +469,13 @@ func checkRead(rdChecker ReadChecker, filePath, cwd string) (allowed bool, passI
 }
 
 // readDenyReason returns the denial reason string when a read is blocked by a
-// prevent-read zone.
+// prevent-read file rule.
 func readDenyReason(path string) string {
 	if path == "" {
 		path = "this file"
 	}
 	return fmt.Sprintf(
-		"CORDON POLICY: %s is protected by a Cordon zone policy. "+
+		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request read access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
 			"Do not attempt to read this file through any alternative method, "+
@@ -492,7 +492,7 @@ func policyDenyReason(path string) string {
 		path = "this file"
 	}
 	return fmt.Sprintf(
-		"CORDON POLICY: %s is protected by a Cordon zone policy. "+
+		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
 			"Do not attempt to write to this file through any alternative method, "+
@@ -511,7 +511,7 @@ func policyBashDenyReason(primary string, all []string) string {
 		target = "a protected file"
 	}
 	return fmt.Sprintf(
-		"CORDON POLICY: %s is protected by a Cordon zone policy. "+
+		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
 			"Do not attempt to write to this file through any alternative method, "+

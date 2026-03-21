@@ -22,18 +22,18 @@
 | CLI-06 | All commands support `--json` flag for structured output consumed by the IDE extension | None |
 | CLI-07 | Platform detection on init: identify installed agent platforms (Claude Code, Codex, VS Code agents) and configure enforcement for each | None |
 
-## Zone Management
+## File Rule Management
 
 | # | Requirement | Progress |
 |---|-------------|--------|
-| ZON-01 | `cordon zone add <file\|folder\|glob>` creates a deny zone (standard authority) in policy.db | Done |
-| ZON-02 | `cordon zone add --guardian <file\|folder\|glob>` creates a zone with guardian authority (requires guardian/admin role when authenticated) | Done |
-| ZON-03 | `cordon zone list` displays all active zones with type, creator, and scope | Done |
-| ZON-04 | `cordon zone remove <file\|folder\|glob>` removes a zone (guardian zones require guardian/admin role) | Done |
-| ZON-05 | Zones stored in `.cordon/policy.db` (SQLite) for unauthenticated users | Done |
-| ZON-06 | Zones cached in `~/.cordon/repos/<repo-hash>/policy-cache.db` for authenticated users, synced from cloud | None |
-| ZON-07 | `cordon zone add --prevent-read` also blocks agent read access (Read, Grep, Bash cat/head/tail/etc.) for credential and secret files | Done |
-| ZON-08 | Zone types: deny (blocks access, default) and allow (permits access, overrides deny zones). Zone authority: standard (any member) or guardian (admin only). `cordon zone add --allow` creates an allow zone | Done |
+| FIL-01 | `cordon file add <file\|folder\|glob>` creates a deny file rule (standard authority) in policy.db | Done |
+| FIL-02 | `cordon file add --guardian <file\|folder\|glob>` creates a file rule with guardian authority (requires guardian/admin role when authenticated) | Done |
+| FIL-03 | `cordon file list` displays all active file rules with type, creator, and scope | Done |
+| FIL-04 | `cordon file remove <file\|folder\|glob>` removes a file rule (guardian rules require guardian/admin role) | Done |
+| FIL-05 | File rules stored in `.cordon/policy.db` (SQLite) for unauthenticated users | Done |
+| FIL-06 | File rules cached in `~/.cordon/repos/<repo-hash>/policy-cache.db` for authenticated users, synced from cloud | None |
+| FIL-07 | `cordon file add --prevent-read` also blocks agent read access (Read, Grep, Bash cat/head/tail/etc.) for credential and secret files | Done |
+| FIL-08 | File rule types: deny (blocks access, default) and allow (permits access, overrides deny rules). File rule authority: standard (any member) or guardian (admin only). `cordon file add --allow` creates an allow rule | Done |
 
 ## Command Rule Management
 
@@ -56,7 +56,7 @@
 | PAS-03 | `cordon pass list` displays active and recent passes with status, issuer, and expiry | Done |
 | PAS-04 | `cordon pass revoke <pass-id>` revokes an active pass | Done |
 | PAS-05 | Pass state stored in `~/.cordon/repos/<repo-hash>/data.db` | Done |
-| PAS-06 | Guardian zone passes restricted to guardian/admin issuance when authenticated | None |
+| PAS-06 | Guardian file rule passes restricted to guardian/admin issuance when authenticated | None |
 
 ## Hook Enforcement
 
@@ -68,7 +68,7 @@
 | HOK-04 | Hook integration is additive: appends to existing hooks array without modifying other entries | Done |
 | HOK-05 | `cordon init` writes `.cordon/codex-policy.md` with deny list for Codex enforcement | Done |
 | HOK-06 | `cordon init` writes `.codex/config.toml` with `model_instructions_file` reference to Codex policy file | None |
-| HOK-07 | Codex policy file regenerated automatically when zones change | Done |
+| HOK-07 | Codex policy file regenerated automatically when file rules change | Done |
 | HOK-08 | Hook queries local policy database (policy.db or policy-cache.db depending on auth state) | Done |
 
 ## MCP Server
@@ -85,7 +85,7 @@
 | # | Requirement | Progress |
 |---|-------------|--------|
 | AUD-01 | Every hook invocation logged to `~/.cordon/repos/<repo-hash>/data.db`: tool name, file path, user, agent, timestamp, permit/deny | Done |
-| AUD-02 | All zone changes logged: creation, modification, removal, by whom, timestamp | Done |
+| AUD-02 | All file rule changes logged: creation, modification, removal, by whom, timestamp | Done |
 | AUD-03 | All pass events logged: issuance, approval, denial, expiry, revocation | Done |
 | AUD-04 | `cordon log` displays audit log with filtering options (--file, --denied-only, --since) | Done |
 | AUD-05 | `cordon log --export csv` exports audit data | Done |
@@ -97,7 +97,7 @@
 | EXT-01 | VS Code extension scaffolding (TypeScript) | None |
 | EXT-02 | CLI detection: check for `cordon` on PATH, prompt user to install if missing | None |
 | EXT-03 | Auth: "Sign in" button triggers `cordon login` subprocess, reads auth state from `cordon status --json` | None |
-| EXT-04 | Zone management panel: list zones, add/remove zones via `cordon zone` commands | None |
+| EXT-04 | File rule management panel: list rules, add/remove rules via `cordon file` commands | None |
 | EXT-05 | Pass management panel: list passes, issue/revoke via `cordon pass` commands | None |
 | EXT-06 | Demarcations panel: display active agent work across the team | None |
 | EXT-07 | CodeLens provider: inline demarcation indicators on files with active agent work | None |
@@ -124,11 +124,11 @@
 | # | Requirement | Progress |
 |---|-------------|--------|
 | SAF-01 | Built-in hook rule: block destructive commands (git reset --hard, git push --force, rm -rf) | In Progress |
-| SAF-02 | Standard guardrail zones for credential files (.env, credentials.json, *.pem, etc.) seeded on `cordon init` with read+write prevention | In Progress |
+| SAF-02 | Standard guardrail file rules for credential files (.env, credentials.json, *.pem, etc.) seeded on `cordon init` with read+write prevention | In Progress |
 | SAF-03 | Built-in hook rule: block modifications to CI/CD config files (.github/workflows/) | None |
 | SAF-04 | Safety hooks configurable per-repo (enable/disable individual rules) | None |
 | SAF-05 | Safety hooks managed through the same `cordon hook` binary (no separate scripts) | None |
-| SAF-06 | Safety hook state stored in policy database alongside zone data | None |
+| SAF-06 | Safety hook state stored in policy database alongside file rule data | None |
 
 ## CI/CD & Release
 
@@ -148,4 +148,3 @@
 | SYN-03 | Sync is two-way: local changes push up, cloud changes pull down, cloud-wins on conflict | None |
 | SYN-04 | Offline resilience: hook enforces last-known cached policy when cloud is unreachable, fails open with logging | None |
 | SYN-05 | Telemetry batched and compressed before upload | None |
-

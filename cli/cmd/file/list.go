@@ -1,4 +1,4 @@
-package zone
+package file
 
 import (
 	"encoding/json"
@@ -14,19 +14,19 @@ import (
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all active zones",
+	Short: "List all active file rules",
 	Args:  cobra.NoArgs,
-	RunE:  runZoneList,
+	RunE:  runFileList,
 }
 
-type zoneListResult struct {
-	Zones []store.Zone `json:"zones"`
+type fileListResult struct {
+	FileRules []store.FileRule `json:"file_rules"`
 }
 
-func runZoneList(cmd *cobra.Command, args []string) error {
+func runFileList(cmd *cobra.Command, args []string) error {
 	root, warn, err := reporoot.Find()
 	if err != nil {
-		return fmt.Errorf("zone list: find repo root: %w", err)
+		return fmt.Errorf("file list: find repo root: %w", err)
 	}
 	if warn != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "warning:", warn)
@@ -34,56 +34,56 @@ func runZoneList(cmd *cobra.Command, args []string) error {
 
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return fmt.Errorf("zone list: resolve repo root: %w", err)
+		return fmt.Errorf("file list: resolve repo root: %w", err)
 	}
 
 	policyDB, err := store.OpenPolicyDB(absRoot)
 	if err != nil {
-		return fmt.Errorf("zone list: open policy database: %w", err)
+		return fmt.Errorf("file list: open policy database: %w", err)
 	}
 	defer policyDB.Close()
 
 	if err := store.MigratePolicyDB(policyDB); err != nil {
-		return fmt.Errorf("zone list: migrate policy database: %w", err)
+		return fmt.Errorf("file list: migrate policy database: %w", err)
 	}
 
-	zones, err := store.ListZones(policyDB)
+	rules, err := store.ListFileRules(policyDB)
 	if err != nil {
-		return fmt.Errorf("zone list: %w", err)
+		return fmt.Errorf("file list: %w", err)
 	}
 
 	if flags.JSON {
-		result := zoneListResult{Zones: zones}
-		if result.Zones == nil {
-			result.Zones = []store.Zone{}
+		result := fileListResult{FileRules: rules}
+		if result.FileRules == nil {
+			result.FileRules = []store.FileRule{}
 		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(out))
 		return nil
 	}
 
-	if len(zones) == 0 {
-		fmt.Println("no zones configured")
+	if len(rules) == 0 {
+		fmt.Println("no file rules configured")
 		return nil
 	}
 
 	// Human-readable table.
 	fmt.Printf("%-30s  %-9s  %-12s  %-16s  %s\n", "PATTERN", "TYPE", "OPS", "CREATED BY", "CREATED AT")
 	fmt.Println(strings.Repeat("-", 92))
-	for _, z := range zones {
-		createdAt := z.CreatedAt
+	for _, f := range rules {
+		createdAt := f.CreatedAt
 		if len(createdAt) > 10 {
 			createdAt = createdAt[:10] // show date portion only
 		}
-		createdBy := z.CreatedBy
+		createdBy := f.CreatedBy
 		if createdBy == "" {
 			createdBy = "local"
 		}
 		blocks := "write"
-		if z.PreventRead || z.ZoneType == "allow" {
+		if f.PreventRead || f.FileType == "allow" {
 			blocks = "read+write"
 		}
-		fmt.Printf("%-30s  %-9s  %-12s  %-16s  %s\n", z.Pattern, z.ZoneType, blocks, createdBy, createdAt)
+		fmt.Printf("%-30s  %-9s  %-12s  %-16s  %s\n", f.Pattern, f.FileType, blocks, createdBy, createdAt)
 	}
 	return nil
 }

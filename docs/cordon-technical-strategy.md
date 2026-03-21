@@ -7,14 +7,14 @@ Cordon provides file-level access policies for AI coding agents (Claude Code, Co
 ## Core Concepts
 
 - **Perimeter**: policy boundary for a repository
-- **Zone**: a protected file, folder, or glob pattern. Standard (any member) or guardian (elevated users only)
-- **Pass**: temporary access grant to write within a zone, with configurable duration
+- **File Rule**: a protected file, folder, or glob pattern. Standard (any member) or guardian (elevated users only)
+- **Pass**: temporary access grant to write to a protected file, with configurable duration
 - **Demarcation**: agent-registered intent declaration visible to the team via IDE CodeLens and panel
 
 ## User Roles
 
-- **Member**: default. Can manage standard zones and issue standard passes
-- **Guardian**: elevated per-repo or org-wide. Can create guardian zones that members cannot override, issue passes for guardian zones, receive and approve pass requests
+- **Member**: default. Can manage standard file rules and issue standard passes
+- **Guardian**: elevated per-repo or org-wide. Can create guardian file rules that members cannot override, issue passes for guardian rules, receive and approve pass requests
 - **Admin**: full control including billing, team management, guardian assignment
 
 ## Enforcement
@@ -42,9 +42,9 @@ Single binary serving as CLI, hook engine, and MCP server.
 
 - `cordon init` — sets up `.cordon/` directory, hook entries, Codex config, MCP entry, `.gitignore` additions. Detects installed agent platforms. Non-destructive with existing configs
 - `cordon hook` — invoked as PreToolUse hook. Reads JSON from stdin, checks file path against policy database, returns exit 0 (allow) or exit 2 with JSON deny response
-- `cordon --mcp` — runs as stdio MCP server. Tools: `cordon_check_zone`, `cordon_request_access`, `cordon_register_demarcation`
+- `cordon --mcp` — runs as stdio MCP server. Tools: `cordon_request_access`, `cordon_register_demarcation`
 - `cordon login` / `cordon logout` — GitHub OAuth browser flow, token stored in `~/.cordon/credentials.json`
-- `cordon zone add|remove|list` — zone management
+- `cordon file add|remove|list` — file rule management
 - `cordon pass issue|revoke|list` — pass management
 - `cordon log` — audit log with filtering and export
 - `cordon sync` — manual policy sync with cloud
@@ -57,7 +57,7 @@ Single binary serving as CLI, hook engine, and MCP server.
 
 Thin UI layer over CLI subprocess calls. Never calls the API directly.
 
-- Zone management panel (add/remove/list via `cordon zone` commands)
+- File rule management panel (add/remove/list via `cordon file` commands)
 - Pass management panel (issue/revoke/list via `cordon pass` commands)
 - Demarcations panel showing team-wide active agent work
 - CodeLens provider for inline demarcation indicators
@@ -81,7 +81,7 @@ Thin UI layer over CLI subprocess calls. Never calls the API directly.
 ### Web Interface (proprietary, app.cordon.sh)
 
 - Team management with GitHub org integration
-- Repository management with file browser for zone creation
+- Repository management with file browser for file rule creation
 - Insights dashboard (org-level and repo-level)
 - Pass activity and audit trail views
 - Admin settings including billing
@@ -91,7 +91,7 @@ Thin UI layer over CLI subprocess calls. Never calls the API directly.
 
 ### In the repository (`.cordon/`)
 
-- `policy.db` — SQLite, zone definitions only. Present for unauthenticated users. Small, changes infrequently. User decides whether to commit
+- `policy.db` — SQLite, file rule definitions only. Present for unauthenticated users. Small, changes infrequently. User decides whether to commit
 - `config.json` — basic config (Cordon version, perimeter ID for cloud users)
 - `codex-policy.md` — managed instructions file for Codex enforcement
 
@@ -108,16 +108,16 @@ Hook checks auth state first. If authenticated, reads from `~/.cordon/repos/<rep
 
 ## Permission Elicitation Flow
 
-1. Agent attempts to write to a zoned file
+1. Agent attempts to write to a protected file
 2. `cordon hook` denies with message instructing agent to call `cordon_request_access` MCP tool
 3. Agent calls MCP tool, which triggers elicitation to the human (IDE prompt or terminal)
 4. Human approves or denies
 5. If approved, pass is created with configured duration, policy cache updated, agent retries
-6. For guardian zones, request routed to guardians via notification channel with approve/deny action
+6. For guardian rules, request routed to guardians via notification channel with approve/deny action
 
 ## Curated Safety Hooks
 
-Bundled hook rules enforced through the same `cordon hook` binary alongside zone enforcement. Configurable per-repo.
+Bundled hook rules enforced through the same `cordon hook` binary alongside file rule enforcement. Configurable per-repo.
 
 - Block destructive commands: `git reset --hard`, `git push --force`, `rm -rf`
 - Block writes to files containing detected credential patterns
@@ -126,7 +126,7 @@ Bundled hook rules enforced through the same `cordon hook` binary alongside zone
 
 ## Audit & Analytics
 
-Every hook invocation logged: tool name, file path, user, agent, timestamp, permit/deny. All zone changes, pass events, and integrity checks logged. Analytics module configurable per-org (on by default).
+Every hook invocation logged: tool name, file path, user, agent, timestamp, permit/deny. All file rule changes, pass events, and integrity checks logged. Analytics module configurable per-org (on by default).
 
 Capabilities: activity heatmaps, most accessed/denied/pass-issued files, user activity breakdown, repeated denial detection, pass activity trends, compliance export.
 
