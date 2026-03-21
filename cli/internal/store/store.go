@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite" // registers "sqlite" driver with database/sql
 )
@@ -136,4 +137,48 @@ func EnsurePerimeterID(db *sql.DB) (string, error) {
 		return "", fmt.Errorf("store: write perimeter id: %w", err)
 	}
 	return id, nil
+}
+
+// SetInstalledAgents stores the list of installed agent IDs in perimeter_meta.
+func SetInstalledAgents(db *sql.DB, agentIDs []string) error {
+	value := strings.Join(agentIDs, ",")
+	_, err := db.Exec(
+		`INSERT OR REPLACE INTO perimeter_meta (key, value) VALUES ('installed_agents', ?)`,
+		value,
+	)
+	if err != nil {
+		return fmt.Errorf("store: write installed_agents: %w", err)
+	}
+	return nil
+}
+
+// GetInstalledAgents reads the list of installed agent IDs from perimeter_meta.
+// Returns nil if not set (pre-registry installations).
+func GetInstalledAgents(db *sql.DB) ([]string, error) {
+	var value string
+	err := db.QueryRow(`SELECT value FROM perimeter_meta WHERE key = 'installed_agents'`).Scan(&value)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: read installed_agents: %w", err)
+	}
+	if value == "" {
+		return nil, nil
+	}
+	return strings.Split(value, ","), nil
+}
+
+// HasPerimeterID reports whether the policy database already contains a
+// perimeter_id entry. Returns false on any error (including missing table).
+func HasPerimeterID(dbPath string) bool {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+
+	var id string
+	err = db.QueryRow(`SELECT value FROM perimeter_meta WHERE key = 'perimeter_id'`).Scan(&id)
+	return err == nil && id != ""
 }

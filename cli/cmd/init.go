@@ -9,32 +9,34 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cordon-co/cordon/internal/claudecfg"
+	"github.com/cordon-co/cordon/internal/agents"
 	"github.com/cordon-co/cordon/internal/codexpolicy"
 	"github.com/cordon-co/cordon/internal/flags"
 	"github.com/cordon-co/cordon/internal/reporoot"
 	"github.com/cordon-co/cordon/internal/store"
+	"github.com/cordon-co/cordon/internal/tui"
 	"github.com/spf13/cobra"
 )
 
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialise Cordon in the current repository",
-	Long: `Creates .cordon/policy.db, writes the PreToolUse hook and MCP server
-entries into .claude/settings.local.json, and creates the user-level data
-database at ~/.cordon/repos/<hash>/data.db.
+	Long: `Creates .cordon/policy.db, configures agent platform hooks and MCP
+servers, and creates the user-level data database at
+~/.cordon/repos/<hash>/data.db.
 
-Running cordon init more than once is safe — all operations are idempotent.`,
+An interactive agent selector lets you choose which platforms to configure.
+Running cordon init more than once is safe — it detects an existing
+installation and returns an informative message.`,
 	Args: cobra.NoArgs,
 	RunE: runInit,
 }
 
 type initResult struct {
-	RepoRoot     string `json:"repo_root"`
-	PolicyDB     string `json:"policy_db"`
-	DataDB       string `json:"data_db"`
-	SettingsFile string `json:"settings_file"`
-	CodexPolicy  string `json:"codex_policy"`
+	RepoRoot string   `json:"repo_root"`
+	PolicyDB string   `json:"policy_db"`
+	DataDB   string   `json:"data_db"`
+	Agents   []string `json:"agents"`
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -49,6 +51,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("init: resolve repo root: %w", err)
+	}
+
+	// Check if already initialised.
+	policyDBPath := filepath.Join(absRoot, ".cordon", "policy.db")
+	if store.HasPerimeterID(policyDBPath) {
+		if flags.JSON {
+			out, _ := json.MarshalIndent(map[string]interface{}{
+				"already_initialised": true,
+				"repo_root":          absRoot,
+			}, "", "  ")
+			fmt.Println(string(out))
+			return nil
+		}
+		fmt.Printf("cordon is already initialised in %s\n", absRoot)
+		return nil
 	}
 
 	// Policy database (.cordon/policy.db)
@@ -93,10 +110,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("init: migrate data database: %w", err)
 	}
 
-	// .claude/settings.local.json
-	settingsPath := filepath.Join(absRoot, ".claude", "settings.local.json")
-	if err := claudecfg.AddCordonEntries(absRoot); err != nil {
-		return fmt.Errorf("init: update settings.local.json: %w", err)
+	// Agent platform selection.
+	selectedIDs, selectedNames, err := selectAgents(cmd)
+	if err != nil {
+		return fmt.Errorf("init: agent selection: %w", err)
+	}
+
+	// Install selected agents.
+	if err := agents.InstallSelected(absRoot, selectedIDs); err != nil {
+		return fmt.Errorf("init: install agents: %w", err)
+	}
+
+	// Store installed agent IDs in perimeter_meta.
+	if err := store.SetInstalledAgents(policyDB, selectedIDs); err != nil {
+		return fmt.Errorf("init: store installed agents: %w", err)
 	}
 
 	// Standard guardrails — prompt user to opt in (skip in --json mode).
@@ -106,22 +133,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// .cordon/codex-policy.md — generate from current file rule list (may be empty on first init).
-	rules, err := store.ListFileRules(policyDB)
-	if err != nil {
-		return fmt.Errorf("init: list file rules for Codex policy: %w", err)
+	// Regenerate codex-policy.md after guardrails are added (if Codex was selected).
+	if hasAgent(selectedIDs, "codex") {
+		rules, err := store.ListFileRules(policyDB)
+		if err != nil {
+			return fmt.Errorf("init: list file rules for Codex policy: %w", err)
+		}
+		if err := codexpolicy.Generate(absRoot, rules); err != nil {
+			return fmt.Errorf("init: generate Codex policy: %w", err)
+		}
 	}
-	if err := codexpolicy.Generate(absRoot, rules); err != nil {
-		return fmt.Errorf("init: generate Codex policy: %w", err)
-	}
-	codexPolicyPath := filepath.Join(absRoot, ".cordon", "codex-policy.md")
 
 	result := initResult{
-		RepoRoot:     absRoot,
-		PolicyDB:     filepath.Join(absRoot, ".cordon", "policy.db"),
-		DataDB:       dataDBPath,
-		SettingsFile: settingsPath,
-		CodexPolicy:  codexPolicyPath,
+		RepoRoot: absRoot,
+		PolicyDB: filepath.Join(absRoot, ".cordon", "policy.db"),
+		DataDB:   dataDBPath,
+		Agents:   selectedNames,
 	}
 
 	if flags.JSON {
@@ -131,12 +158,75 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	homeDir, _ := os.UserHomeDir()
-	fmt.Printf("cordon initialised in %s\n", absRoot)
+	fmt.Printf("\ncordon initialised in %s\n", absRoot)
 	fmt.Printf("  policy DB:     %s\n", shortenHome(result.PolicyDB, homeDir))
 	fmt.Printf("  data DB:       %s\n", shortenHome(result.DataDB, homeDir))
-	fmt.Printf("  Claude hooks:  %s\n", shortenHome(result.SettingsFile, homeDir))
-	fmt.Printf("  Codex policy:  %s\n", shortenHome(result.CodexPolicy, homeDir))
+	if len(selectedNames) > 0 {
+		fmt.Printf("  agents:        %s\n", strings.Join(selectedNames, ", "))
+	}
 	return nil
+}
+
+// selectAgents presents the interactive TUI (or auto-selects in --json/non-TTY).
+// Returns the selected agent IDs and display names.
+func selectAgents(cmd *cobra.Command) (ids []string, names []string, err error) {
+	allAgents := agents.All()
+
+	if flags.JSON {
+		// Auto-select all installable agents.
+		for _, a := range allAgents {
+			if a.Installable() {
+				ids = append(ids, a.ID())
+				names = append(names, a.DisplayName())
+			}
+		}
+		return ids, names, nil
+	}
+
+	// Build TUI options.
+	options := make([]tui.Option, len(allAgents))
+	for i, a := range allAgents {
+		options[i] = tui.Option{
+			Label:      a.DisplayName(),
+			Selectable: a.Installable(),
+			Selected:   a.Installable(), // pre-select all installable
+		}
+		if !a.Installable() {
+			options[i].Suffix = "(coming soon)"
+		}
+	}
+
+	fmt.Fprintln(cmd.ErrOrStderr())
+	fmt.Fprintln(cmd.ErrOrStderr(), "Select agent platforms to configure (space to toggle, enter to confirm):")
+	selected, err := tui.MultiSelect("", options)
+	if err != nil {
+		if err == tui.ErrAborted {
+			// User aborted — fall back to all installable.
+			for _, a := range allAgents {
+				if a.Installable() {
+					ids = append(ids, a.ID())
+					names = append(names, a.DisplayName())
+				}
+			}
+			return ids, names, nil
+		}
+		return nil, nil, err
+	}
+
+	for _, idx := range selected {
+		ids = append(ids, allAgents[idx].ID())
+		names = append(names, allAgents[idx].DisplayName())
+	}
+	return ids, names, nil
+}
+
+func hasAgent(ids []string, target string) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
 }
 
 // shortenHome replaces the user home directory prefix with ~ for display.

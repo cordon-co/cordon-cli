@@ -2,22 +2,42 @@
 
 ## Summary
 
-Completed: **Zone → File Rule Rename** — renamed all references to "zone" to "file rule" across the entire codebase. CLI subcommand `cordon zone` became `cordon file`. All Go identifiers (Zone → FileRule, ZoneType → FileType, ZoneAuthority → FileAuthority, ZoneForPath → FileRuleForPath, AddZone → AddFileRule, ListZones → ListFileRules, RemoveZone → RemoveFileRule, StandardGuardrailZones → StandardGuardrailFileRules). DB table `zones` became `file_rules` with columns `file_access`/`file_authority`. Passes table `zone_id` became `file_rule_id`. Audit log `zone_id` became `file_rule_id`, event types `zone_add`/`zone_remove` became `file_add`/`file_remove`. Directory `cli/cmd/zone/` became `cli/cmd/file/`. All docs updated. Requirements renamed ZON-* to FIL-*.
+Completed: **CLI-07 — Interactive Agent Platform Selection on Init** — rearchitect `cordon init` to present an interactive checkbox TUI where users select which AI coding agents to configure. Introduces an agent registry pattern so each platform (Claude, Copilot, Codex, Cursor, Gemini CLI, KiloCode, OpenCode) has a self-contained installer. Stores selected agents in `perimeter_meta` so cordon knows which agents are configured for ongoing operations. Adds "already initialised" detection with informative message.
 
-Previously completed: **Command Rule Type/Authority Refactor (CMD-07)** — allow/deny + standard/guardian on command rules, `--allow` flag, removed reason column, removed backward-compat migrations.
+## Key Files
 
-Previously completed: **File Rule Type / Authority Refactor (FIL-08)** — allow/deny access + standard/guardian authority on file rules.
+- `cli/cmd/init.go` — init command orchestration, TUI interaction
+- `cli/internal/agentcfg/` — new package: agent registry, per-agent installers
+- `cli/internal/agentcfg/claude.go` — Claude Code installer (extracted from claudecfg)
+- `cli/internal/agentcfg/copilot.go` — VS Code Copilot installer (extracted from claudecfg)
+- `cli/internal/agentcfg/codex.go` — Codex installer (new: writes .codex/config.toml)
+- `cli/internal/agentcfg/cursor.go` — Cursor placeholder stub
+- `cli/internal/agentcfg/gemini.go` — Gemini CLI placeholder stub
+- `cli/internal/agentcfg/kilocode.go` — KiloCode placeholder stub
+- `cli/internal/agentcfg/opencode.go` — OpenCode placeholder stub
+- `cli/internal/claudecfg/claudecfg.go` — existing; will be refactored into agentcfg
+- `cli/internal/store/schema.go` — perimeter_meta stores `installed_agents`
+- `cli/internal/store/store.go` — new functions for reading/writing installed agents
+- `cli/internal/tui/checkbox.go` — new: raw ANSI checkbox selector (no external deps)
 
-Previously completed: **File Rule Read Prevention + Guardrail File Rules** — `prevent_read`/`prevent_write` columns, hook enforcement for read tools, `--prevent-read` flag, standard guardrail file rules (FIL-07, SAF-02).
+## Relevant Requirement IDs
 
-Previously completed: **Command Rules** — policy-based enforcement of shell commands (CMD-01 through CMD-06, SAF-01 in progress).
+- CLI-07: Platform detection on init
+- HOK-06: `cordon init` writes `.codex/config.toml`
+- CLI-02: `cordon init` (enhancement)
 
-Previously completed: **Tests** — store-level unit tests (matching/enforcement logic) and CLI integration tests (CRUD lifecycles). 17 tests across `cli/internal/store/` and `cli/tests/`. Runner at `cli/scripts/test.sh`, CI at `.github/workflows/test.yml`.
+## Previously Completed
 
-## Next Steps
+- **Zone → File Rule Rename**
+- **Command Rule Type/Authority Refactor (CMD-07)**
+- **File Rule Type / Authority Refactor (FIL-08)**
+- **File Rule Read Prevention + Guardrail File Rules**
+- **Command Rules (CMD-01 through CMD-06)**
+- **Tests** — 17 tests across `cli/internal/store/` and `cli/tests/`
 
-1. **SAF-01 (remaining)** — add destructive command built-in rules (`git reset --hard*`, `git push --force*`, `rm -rf /*`)
-2. **HOK-06** — `cordon init` writes `.codex/config.toml`
-3. **CLI-03/04** — `cordon login` / `cordon logout`
-4. **CLI-05** — `cordon status`
-5. **INT-01..06** — `cordon check` integrity verification
+## Next Steps (after this task)
+
+1. **SAF-01 (remaining)** — add destructive command built-in rules
+2. **CLI-03/04** — `cordon login` / `cordon logout`
+3. **CLI-05** — `cordon status`
+4. **INT-01..06** — `cordon check` integrity verification

@@ -20,7 +20,7 @@
 | CLI-04 | `cordon logout` clears stored credentials | None |
 | CLI-05 | `cordon status` displays auth state, repo policy summary, sync state, and integrity check result | None |
 | CLI-06 | All commands support `--json` flag for structured output consumed by the IDE extension | None |
-| CLI-07 | Platform detection on init: identify installed agent platforms (Claude Code, Codex, VS Code agents) and configure enforcement for each | None |
+| CLI-07 | Platform detection on init: identify installed agent platforms (Claude Code, Codex, VS Code agents) and configure enforcement for each | Done |
 
 ## File Rule Management
 
