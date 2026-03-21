@@ -1,90 +1,51 @@
-# cordon CLI
+# cordon — CLI source
 
-Go binary that serves as the CLI, hook enforcement engine, and MCP server for [Cordon](https://cordon.sh).
+Go module for the cordon binary. See the [root README](../README.md) for product documentation.
 
-## Commands
+## Requirements
 
-```
-cordon init                          Initialise Cordon in the current repository
-cordon remove                        Uninstall Cordon from the current repository
-cordon status                        Show auth state, policy summary, and integrity check
-cordon login                         Authenticate via GitHub OAuth
-cordon logout                        Clear stored credentials
-cordon sync                          Sync policy and audit data with Cordon Cloud
-cordon hook                          Evaluate a PreToolUse hook payload (reads JSON from stdin)
-cordon log [--file] [--denied-only] [--since] [--export csv]
-cordon file add [--guardian] <path>
-cordon file list
-cordon file remove <path>
-cordon pass issue [--file] [--duration]
-cordon pass list
-cordon pass revoke <pass-id>
-cordon version
-cordon --mcp                         Run as a stdio MCP server
-```
-
-All commands accept `--json` for structured output consumed by the IDE extension.
-
-## Status
-
-The command tree and flag surface are in place and the binary compiles. Business logic is not yet implemented — all commands print `not implemented` and exit cleanly. `--json` output returns valid but empty/stub JSON payloads. Flags documented in `--help` (e.g. `--file`, `--duration`, `--since`, `--export`) are wired to variables but have no effect yet.
+Go 1.22+. No CGo required — SQLite is bundled via `modernc.org/sqlite`.
 
 ## Build
 
-Requires Go 1.22+.
-
 ```sh
-# current platform
-./scripts/build.sh
+# from repo root
+./scripts/build.sh              # current platform → cli/build/cordon
+./scripts/build.sh all          # all release targets
 
-# all release targets (darwin/linux/windows, arm64/amd64)
-./scripts/build.sh all
-
-# or via make
-make build
-make build-all VERSION=1.0.0
+# or directly
+cd cli && make build
 ```
 
-Binaries are written to `build/`.
-
-## Dev install
+## Test
 
 ```sh
-./scripts/dev-install.sh
-# installs to ~/.local/bin/cordon by default
-# override with INSTALL_DIR=/usr/local/bin ./scripts/dev-install.sh
+# from repo root
+./scripts/test.sh
+
+# or directly
+cd cli && go test ./... -count=1 -v
 ```
 
-## Release
-
-Tagged pushes (`v*`) trigger the GitHub Actions release workflow, which cross-compiles all targets and attaches the binaries to the GitHub release.
-
-Version is injected at build time:
-
-```sh
-make build VERSION=1.2.3
-# or
-go build -ldflags "-X github.com/cordon-co/cordon/cmd.Version=1.2.3" -o build/cordon .
-```
-
-## Project layout
+## Package layout
 
 ```
 main.go
 cmd/
   root.go          root command, --json and --mcp flags
   init.go
-  remove.go
-  login.go / logout.go
-  status.go / sync.go
-  hook.go          invoked by agent PreToolUse hook config (hidden from help)
+  hook.go          PreToolUse hook enforcement (hidden from help)
   log.go
-  version.go
   file/            file add|list|remove
+  command/         command add|list|remove
   pass/            pass issue|list|revoke
 internal/
-  flags/           shared flag state (avoids circular imports between cmd packages)
-scripts/
-  build.sh
-  dev-install.sh
+  store/           SQLite layer — policy.db (repo) and data.db (user)
+  hook/            hook evaluation logic
+  reporoot/        walks up to find .cordon/
+  claudecfg/       .claude/settings.local.json management
+  codexpolicy/     .cordon/codex-policy.md generation
+  flags/           shared flag state (avoids circular imports)
+tests/
+  CLI integration tests — build binary, exercise via subprocess
 ```

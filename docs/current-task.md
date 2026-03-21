@@ -12,6 +12,8 @@ Previously completed: **File Rule Read Prevention + Guardrail File Rules** — `
 
 Previously completed: **Command Rules** — policy-based enforcement of shell commands (CMD-01 through CMD-06, SAF-01 in progress).
 
+Previously completed: **Tests** — store-level unit tests (matching/enforcement logic) and CLI integration tests (CRUD lifecycles). 17 tests across `cli/internal/store/` and `cli/tests/`. Runner at `cli/scripts/test.sh`, CI at `.github/workflows/test.yml`.
+
 ## Next Steps
 
 1. **SAF-01 (remaining)** — add destructive command built-in rules (`git reset --hard*`, `git push --force*`, `rm -rf /*`)
