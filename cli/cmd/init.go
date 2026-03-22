@@ -78,7 +78,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Ensure a stable perimeter ID exists for this project.
-	perimeterID, err := store.EnsurePerimeterID(policyDB)
+	perimeterID, err := store.EnsurePerimeterID(policyDB, absRoot)
 	if err != nil {
 		return fmt.Errorf("init: ensure perimeter id: %w", err)
 	}

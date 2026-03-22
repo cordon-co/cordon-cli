@@ -6,9 +6,11 @@
 package store
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -120,16 +122,23 @@ func GetPerimeterID(db *sql.DB) (string, error) {
 }
 
 // EnsurePerimeterID reads the perimeter_id from the policy database, or
-// generates and stores a new UUID v4 if none exists. Returns the ID.
-func EnsurePerimeterID(db *sql.DB) (string, error) {
+// generates and stores a new one if none exists. The ID is derived
+// deterministically from the git repository's root commit hash so that
+// the same repo (even cloned separately) maps to the same data directory.
+// Falls back to a random UUID for non-git directories.
+func EnsurePerimeterID(db *sql.DB, absRepoRoot string) (string, error) {
 	id, err := GetPerimeterID(db)
 	if err == nil {
 		return id, nil
 	}
 
-	id, err = newUUID()
+	id, err = deriveRepoID(absRepoRoot)
 	if err != nil {
-		return "", fmt.Errorf("store: generate perimeter id: %w", err)
+		// Non-git directory — fall back to random UUID.
+		id, err = newUUID()
+		if err != nil {
+			return "", fmt.Errorf("store: generate perimeter id: %w", err)
+		}
 	}
 
 	_, err = db.Exec(`INSERT OR IGNORE INTO perimeter_meta (key, value) VALUES ('perimeter_id', ?)`, id)
@@ -137,6 +146,31 @@ func EnsurePerimeterID(db *sql.DB) (string, error) {
 		return "", fmt.Errorf("store: write perimeter id: %w", err)
 	}
 	return id, nil
+}
+
+// deriveRepoID produces a deterministic perimeter ID from the git
+// repository's root commit (the first commit). The root commit hash is
+// identical across all clones of a repository, making it a stable
+// identifier. The result is a SHA-256-based hex string (first 32 chars).
+func deriveRepoID(absRepoRoot string) (string, error) {
+	cmd := exec.Command("git", "rev-list", "--max-parents=0", "HEAD")
+	cmd.Dir = absRepoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git root commit: %w", err)
+	}
+
+	// rev-list may return multiple root commits (e.g. after a graft).
+	// Use the first one, which is the earliest.
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		return "", fmt.Errorf("no root commit found")
+	}
+	rootCommit := lines[0]
+
+	// Hash with a fixed prefix to namespace these IDs.
+	h := sha256.Sum256([]byte("cordon:repo:" + rootCommit))
+	return fmt.Sprintf("%x", h[:16]), nil
 }
 
 // SetInstalledAgents stores the list of installed agent IDs in perimeter_meta.
