@@ -9,11 +9,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/../cli"
+cd "$SCRIPT_DIR/.."
 
 VERSION="${VERSION:-dev}"
 BUILD_DIR="build"
-LDFLAGS="-X github.com/cordon-co/cordon-cli/cmd.Version=${VERSION}"
+LDFLAGS="-X github.com/cordon-co/cordon-cli/cli/cmd.Version=${VERSION}"
 
 mkdir -p "$BUILD_DIR"
 

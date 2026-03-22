@@ -25,12 +25,12 @@ func TestMain(m *testing.M) {
 
 	binaryPath = filepath.Join(tmp, "cordon")
 
-	// Build from the cli directory (one level up from tests/).
-	cliDir, err := filepath.Abs("..")
+	// Build from the repo root (two levels up from tests/).
+	repoRoot, err := filepath.Abs("../..")
 	if err != nil {
-		panic("resolve cli dir: " + err.Error())
+		panic("resolve repo root: " + err.Error())
 	}
-	out, err := exec.Command("go", "build", "-o", binaryPath, cliDir).CombinedOutput()
+	out, err := exec.Command("go", "build", "-o", binaryPath, repoRoot).CombinedOutput()
 	if err != nil {
 		panic("build cordon binary: " + err.Error() + "\n" + string(out))
 	}

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/cordon-co/cordon-cli/internal/codexpolicy"
-	"github.com/cordon-co/cordon-cli/internal/flags"
-	"github.com/cordon-co/cordon-cli/internal/reporoot"
-	"github.com/cordon-co/cordon-cli/internal/store"
+	"github.com/cordon-co/cordon-cli/cli/internal/codexpolicy"
+	"github.com/cordon-co/cordon-cli/cli/internal/flags"
+	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
+	"github.com/cordon-co/cordon-cli/cli/internal/store"
 	"github.com/spf13/cobra"
 )
 

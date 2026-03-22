@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cordon-co/cordon-cli/internal/codexpolicy"
-	"github.com/cordon-co/cordon-cli/internal/store"
+	"github.com/cordon-co/cordon-cli/cli/internal/codexpolicy"
+	"github.com/cordon-co/cordon-cli/cli/internal/store"
 )
 
 // Codex configures OpenAI Codex via .cordon/codex-policy.md (soft enforcement

@@ -10,14 +10,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/../cli"
+cd "$SCRIPT_DIR/.."
 
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 BUILD_DIR="build"
 BINARY="${BUILD_DIR}/cordon"
 
 echo "Building cordon (dev)..."
-go build -ldflags "-X github.com/cordon-co/cordon-cli/cmd.Version=dev" -o "$BINARY" .
+go build -ldflags "-X github.com/cordon-co/cordon-cli/cli/cmd.Version=dev" -o "$BINARY" .
 
 mkdir -p "$INSTALL_DIR"
 cp "$BINARY" "${INSTALL_DIR}/cordon"

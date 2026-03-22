@@ -23,7 +23,6 @@ jobs:
           go-version: '1.22'
 
       - name: Build all targets
-        working-directory: cli
         env:
           VERSION: ${{ github.ref_name }}
         run: make build-all VERSION=${{ github.ref_name }}
@@ -32,7 +31,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            cli/build/cordon-darwin-arm64
-            cli/build/cordon-darwin-amd64
-            cli/build/cordon-linux-amd64
-            cli/build/cordon-linux-arm64
+            build/cordon-darwin-arm64
+            build/cordon-darwin-amd64
+            build/cordon-linux-amd64
+            build/cordon-linux-arm64

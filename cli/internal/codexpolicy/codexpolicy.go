@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cordon-co/cordon-cli/internal/store"
+	"github.com/cordon-co/cordon-cli/cli/internal/store"
 )
 
 const filename = "codex-policy.md"

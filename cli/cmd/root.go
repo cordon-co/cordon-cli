@@ -5,11 +5,11 @@ import (
 	"context"
 	"os"
 
-	"github.com/cordon-co/cordon-cli/cmd/command"
-	"github.com/cordon-co/cordon-cli/cmd/pass"
-	"github.com/cordon-co/cordon-cli/cmd/file"
-	"github.com/cordon-co/cordon-cli/internal/flags"
-	"github.com/cordon-co/cordon-cli/internal/mcpserver"
+	"github.com/cordon-co/cordon-cli/cli/cmd/command"
+	"github.com/cordon-co/cordon-cli/cli/cmd/pass"
+	"github.com/cordon-co/cordon-cli/cli/cmd/file"
+	"github.com/cordon-co/cordon-cli/cli/internal/flags"
+	"github.com/cordon-co/cordon-cli/cli/internal/mcpserver"
 	"github.com/spf13/cobra"
 )
 

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cordon-co/cordon-cli/internal/agents"
-	"github.com/cordon-co/cordon-cli/internal/flags"
+	"github.com/cordon-co/cordon-cli/cli/internal/agents"
+	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/spf13/cobra"
 )
 
