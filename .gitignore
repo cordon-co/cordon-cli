@@ -7,3 +7,4 @@ cli/build/
 .env
 .mcp.json
 .github/hooks/
+agentdocs/
