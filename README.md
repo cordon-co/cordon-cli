@@ -66,12 +66,12 @@ The interactive setup will detect installed agents and let you select which ones
 
 | Agent | Support | Hook Based Enforcement | MCP Elicitation Support |
 |-------|---------|------------------------|-------------------------|
-| Claude Code | First class | Yes ✓ | Yes ✓ |
-| Cursor | First class | Yes ✓ | Yes ✓ |
-| VS Code Chat (Copilot) | First class | Yes ✓ | Yes ✓ |
-| Gemini CLI | Effective | Yes ✓ | No ⤫ |
-| OpenCode | Effective | Yes ✓ | No ⤫ |
-| Codex | Limited | No ⤫ | No ⤫ |
+| Claude Code | First class | ✓ Yes | ✓ Yes |
+| Cursor | First class | ✓ Yes | ✓ Yes |
+| VS Code Chat (Copilot) | First class | ✓ Yes | ✓ Yes |
+| Gemini CLI | Effective | ✓ Yes | ⤫ No |
+| OpenCode | Effective | ✓ Yes | ⤫ No |
+| Codex | Limited | ⤫ No | ⤫ No |
 
 ## Commands
 
