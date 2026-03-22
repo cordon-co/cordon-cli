@@ -64,7 +64,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Println(string(out))
 			return nil
 		}
-		fmt.Printf("cordon is already initialised in %s\n", absRoot)
+		fmt.Printf("Cordon is already initialised in %s\n", absRoot)
 		return nil
 	}
 
@@ -127,8 +127,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Standard guardrails — prompt user to opt in (skip in --json mode).
+	var addedCommands []string
+	var addedFiles []string
 	if !flags.JSON {
-		if err := promptAndAddGuardrails(cmd, policyDB); err != nil {
+		var err error
+		addedCommands, addedFiles, err = promptAndAddGuardrails(cmd, policyDB)
+		if err != nil {
 			return fmt.Errorf("init: guardrails: %w", err)
 		}
 	}
@@ -157,12 +161,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	homeDir, _ := os.UserHomeDir()
-	fmt.Printf("\ncordon initialised in %s\n", absRoot)
-	fmt.Printf("  policy DB:     %s\n", shortenHome(result.PolicyDB, homeDir))
-	fmt.Printf("  data DB:       %s\n", shortenHome(result.DataDB, homeDir))
+	fmt.Printf("\nCordon initialised in %s\n", absRoot)
 	if len(selectedNames) > 0 {
-		fmt.Printf("  agents:        %s\n", strings.Join(selectedNames, ", "))
+		fmt.Printf("  Managed Agents:  %s\n", strings.Join(selectedNames, ", "))
+	}
+	if len(addedCommands) > 0 {
+		fmt.Println("  Command Rules:")
+		for _, c := range addedCommands {
+			fmt.Printf("    deny  %s\n", c)
+		}
+	}
+	if len(addedFiles) > 0 {
+		fmt.Println("  File Rules:")
+		for _, f := range addedFiles {
+			fmt.Printf("    deny  %s\n", f)
+		}
 	}
 	return nil
 }
@@ -244,7 +257,8 @@ func shortenHome(path, homeDir string) string {
 // promptAndAddGuardrails offers the user the standard set of guardrails.
 // Rules and file rules that already exist are skipped (idempotent). If the user
 // declines, nothing is added. The prompt defaults to yes.
-func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
+// Returns the lists of command patterns and file patterns that were added.
+func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) (addedCommands []string, addedFiles []string, err error) {
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Add standard guardrails? These include sensible defaults for common")
 	fmt.Fprintln(cmd.OutOrStdout(), "footguns like 'git reset --hard', 'rm -rf', and credential file protection")
@@ -258,11 +272,10 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 	// Default to yes on empty input.
 	if answer != "" && strings.ToLower(answer) != "y" && strings.ToLower(answer) != "yes" {
 		fmt.Fprintln(cmd.OutOrStdout(), "  skipped.")
-		return nil
+		return nil, nil, nil
 	}
 
 	user := store.CurrentOSUser()
-	added := 0
 
 	for _, pattern := range store.StandardGuardrails {
 		_, err := store.AddRule(policyDB, pattern, "deny", "standard", user)
@@ -270,9 +283,9 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue
 			}
-			return fmt.Errorf("add guardrail rule %q: %w", pattern, err)
+			return nil, nil, fmt.Errorf("add guardrail rule %q: %w", pattern, err)
 		}
-		added++
+		addedCommands = append(addedCommands, pattern)
 	}
 
 	for _, f := range store.StandardGuardrailFileRules {
@@ -281,15 +294,16 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) error {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue
 			}
-			return fmt.Errorf("add guardrail file rule %q: %w", f.Pattern, err)
+			return nil, nil, fmt.Errorf("add guardrail file rule %q: %w", f.Pattern, err)
 		}
-		added++
+		addedFiles = append(addedFiles, f.Pattern)
 	}
 
-	if added > 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "  added %d guardrail(s).\n", added)
+	total := len(addedCommands) + len(addedFiles)
+	if total > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  added %d guardrail(s).\n", total)
 	} else {
 		fmt.Fprintln(cmd.OutOrStdout(), "  already configured.")
 	}
-	return nil
+	return addedCommands, addedFiles, nil
 }

@@ -21,6 +21,7 @@ const (
 	MCPRelPath        = ".mcp.json"
 	VSCodeMCPRelPath  = ".vscode/mcp.json"
 	VSCodeHookRelPath = ".github/hooks/cordon.json"
+	CursorMCPRelPath  = ".cursor/mcp.json"
 )
 
 // ReadSettings reads and unmarshals the settings file into a generic map.

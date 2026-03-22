@@ -2,32 +2,16 @@
 
 ## Summary
 
-Completed: **CLI-07 — Interactive Agent Platform Selection on Init** — rearchitect `cordon init` to present an interactive checkbox TUI where users select which AI coding agents to configure. Introduces an agent registry pattern so each platform (Claude, Copilot, Codex, Cursor, Gemini CLI, KiloCode, OpenCode) has a self-contained installer. Stores selected agents in `perimeter_meta` so cordon knows which agents are configured for ongoing operations. Adds "already initialised" detection with informative message.
+Completed: **Cursor Agent Support** — implemented full Cursor IDE agent integration. Cursor already uses `.claude/settings.local.json` for hook enforcement (shared with Claude Code), so only the MCP server entry needed Cursor-specific configuration. Added `.cursor/mcp.json` support using the `mcpServers` key format. Cursor now appears as an installable agent in `cordon init` TUI and is properly cleaned up by `cordon remove`.
 
 ## Key Files
 
-- `cli/cmd/init.go` — init command orchestration, TUI interaction
-- `cli/internal/agentcfg/` — new package: agent registry, per-agent installers
-- `cli/internal/agentcfg/claude.go` — Claude Code installer (extracted from claudecfg)
-- `cli/internal/agentcfg/copilot.go` — VS Code Copilot installer (extracted from claudecfg)
-- `cli/internal/agentcfg/codex.go` — Codex installer (new: writes .codex/config.toml)
-- `cli/internal/agentcfg/cursor.go` — Cursor placeholder stub
-- `cli/internal/agentcfg/gemini.go` — Gemini CLI placeholder stub
-- `cli/internal/agentcfg/kilocode.go` — KiloCode placeholder stub
-- `cli/internal/agentcfg/opencode.go` — OpenCode placeholder stub
-- `cli/internal/claudecfg/claudecfg.go` — existing; will be refactored into agentcfg
-- `cli/internal/store/schema.go` — perimeter_meta stores `installed_agents`
-- `cli/internal/store/store.go` — new functions for reading/writing installed agents
-- `cli/internal/tui/checkbox.go` — new: raw ANSI checkbox selector (no external deps)
-
-## Relevant Requirement IDs
-
-- CLI-07: Platform detection on init
-- HOK-06: `cordon init` writes `.codex/config.toml`
-- CLI-02: `cordon init` (enhancement)
+- `cli/internal/agents/cursor.go` — full Install/Remove/Installed implementation (was a stub)
+- `cli/internal/claudecfg/claudecfg.go` — added `CursorMCPRelPath` constant
 
 ## Previously Completed
 
+- **CLI-07 — Interactive Agent Platform Selection on Init**
 - **Zone → File Rule Rename**
 - **Command Rule Type/Authority Refactor (CMD-07)**
 - **File Rule Type / Authority Refactor (FIL-08)**
