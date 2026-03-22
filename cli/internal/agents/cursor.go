@@ -3,7 +3,7 @@ package agents
 import (
 	"path/filepath"
 
-	"github.com/cordon-co/cordon/internal/claudecfg"
+	"github.com/cordon-co/cordon-cli/internal/claudecfg"
 )
 
 // Cursor configures Cursor IDE via .cursor/hooks.json, .cursor/mcp.json,

@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cordon-co/cordon/internal/agents"
-	"github.com/cordon-co/cordon/internal/codexpolicy"
-	"github.com/cordon-co/cordon/internal/flags"
-	"github.com/cordon-co/cordon/internal/store"
-	"github.com/cordon-co/cordon/internal/tui"
+	"github.com/cordon-co/cordon-cli/internal/agents"
+	"github.com/cordon-co/cordon-cli/internal/codexpolicy"
+	"github.com/cordon-co/cordon-cli/internal/flags"
+	"github.com/cordon-co/cordon-cli/internal/store"
+	"github.com/cordon-co/cordon-cli/internal/tui"
 	"github.com/spf13/cobra"
 )
 

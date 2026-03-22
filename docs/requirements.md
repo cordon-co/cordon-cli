@@ -7,8 +7,8 @@
 | INS-01 | `curl cordon.sh/install.sh \| sh` downloads correct platform binary and places on PATH | None |
 | INS-02 | Install script supports macOS (arm64, x64), Linux (x64, arm64) | In Progress |
 | INS-03 | PowerShell install script (`irm cordon.sh/install.ps1 \| iex`) for Windows (WSL documented as required for hooks) | None |
-| INS-04 | `cordon uninstall` cleanly uninstalls all Cordon configuration from a repo: removes hook entries from settings.local.json, removes .codex/config.toml modifications, removes .cordon/ directory. Warns user that local policy will be discarded and prompts for confirmation | In Progress |
-| INS-05 | Uninstall leaves all non-Cordon hooks and config intact | In Progress |
+| INS-04 | `cordon uninstall` cleanly uninstalls all Cordon configuration from a repo: removes hook entries from settings.local.json, removes .codex/config.toml modifications, removes .cordon/ directory. Warns user that local policy will be discarded and prompts for confirmation | Done |
+| INS-05 | Uninstall leaves all non-Cordon hooks and config intact | Done |
 
 ## CLI Core
 

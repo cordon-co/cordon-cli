@@ -2,7 +2,7 @@
 # install.sh — download and install the latest cordon binary
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/cordon-co/cordon/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/cordon-co/cordon-cli/main/scripts/install.sh | sh
 #
 # Environment variables:
 #   CORDON_VERSION   — install a specific version (e.g. v0.1.0). Default: latest
@@ -10,7 +10,7 @@
 
 set -eu
 
-REPO="cordon-co/cordon"
+REPO="cordon-co/cordon-cli"
 BINARY="cordon"
 
 # ---------------------------------------------------------------------------

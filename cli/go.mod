@@ -1,4 +1,4 @@
-module github.com/cordon-co/cordon
+module github.com/cordon-co/cordon-cli
 
 go 1.24.0
 

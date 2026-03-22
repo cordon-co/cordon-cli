@@ -3,11 +3,11 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/cordon-co/cordon/internal/flags"
+	"github.com/cordon-co/cordon-cli/internal/flags"
 	"github.com/spf13/cobra"
 )
 
-// Version is set at build time via -ldflags "-X github.com/cordon-co/cordon/cmd.Version=<tag>".
+// Version is set at build time via -ldflags "-X github.com/cordon-co/cordon-cli/cmd.Version=<tag>".
 var Version = "dev"
 
 var versionCmd = &cobra.Command{

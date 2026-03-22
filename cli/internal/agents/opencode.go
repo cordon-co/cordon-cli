@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -130,17 +129,134 @@ func (o *OpenCode) pluginInstalled(repoRoot string) bool {
 // --- MCP config management (.opencode/opencode.jsonc) ---
 
 // stripJSONC removes single-line comments (//) and trailing commas to produce
-// valid JSON from a JSONC input. This is intentionally simple — it does not
-// handle comments inside strings, but OpenCode config files in practice do not
-// contain such patterns.
+// valid JSON from a JSONC input while preserving comment-like text inside
+// string literals (for example "https://...").
 func stripJSONC(raw []byte) []byte {
-	// Remove single-line comments.
-	re := regexp.MustCompile(`(?m)//.*$`)
-	clean := re.ReplaceAll(raw, nil)
-	// Remove trailing commas before } or ].
-	re2 := regexp.MustCompile(`,\s*([}\]])`)
-	clean = re2.ReplaceAll(clean, []byte("$1"))
-	return clean
+	return stripJSONCTrailingCommas(stripJSONCComments(raw))
+}
+
+func stripJSONCComments(raw []byte) []byte {
+	out := make([]byte, 0, len(raw))
+	inString := false
+	escape := false
+	inLineComment := false
+	inBlockComment := false
+
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
+
+		if inLineComment {
+			if ch == '\n' {
+				inLineComment = false
+				out = append(out, ch)
+			}
+			continue
+		}
+
+		if inBlockComment {
+			if ch == '*' && i+1 < len(raw) && raw[i+1] == '/' {
+				inBlockComment = false
+				i++
+				continue
+			}
+			if ch == '\n' {
+				out = append(out, ch)
+			}
+			continue
+		}
+
+		if inString {
+			out = append(out, ch)
+			if escape {
+				escape = false
+				continue
+			}
+			if ch == '\\' {
+				escape = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		if ch == '"' {
+			inString = true
+			out = append(out, ch)
+			continue
+		}
+
+		if ch == '/' && i+1 < len(raw) {
+			next := raw[i+1]
+			if next == '/' {
+				inLineComment = true
+				i++
+				continue
+			}
+			if next == '*' {
+				inBlockComment = true
+				i++
+				continue
+			}
+		}
+
+		out = append(out, ch)
+	}
+
+	return out
+}
+
+func stripJSONCTrailingCommas(raw []byte) []byte {
+	out := make([]byte, 0, len(raw))
+	inString := false
+	escape := false
+
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
+
+		if inString {
+			out = append(out, ch)
+			if escape {
+				escape = false
+				continue
+			}
+			if ch == '\\' {
+				escape = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		if ch == '"' {
+			inString = true
+			out = append(out, ch)
+			continue
+		}
+
+		if ch == ',' {
+			j := i + 1
+			for j < len(raw) {
+				switch raw[j] {
+				case ' ', '\t', '\n', '\r':
+					j++
+				default:
+					goto nextToken
+				}
+			}
+		nextToken:
+			if j < len(raw) && (raw[j] == '}' || raw[j] == ']') {
+				continue
+			}
+		}
+
+		out = append(out, ch)
+	}
+
+	return out
 }
 
 func readOpenCodeConfig(path string) (map[string]interface{}, error) {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cordon-co/cordon/internal/claudecfg"
+	"github.com/cordon-co/cordon-cli/internal/claudecfg"
 )
 
 // VSCopilot configures VS Code Copilot via .vscode/mcp.json and

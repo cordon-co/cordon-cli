@@ -67,7 +67,7 @@ Version is injected at build time:
 ```sh
 make build VERSION=1.2.3
 # or
-go build -ldflags "-X github.com/cordon-co/cordon/cmd.Version=1.2.3" -o build/cordon .
+go build -ldflags "-X github.com/cordon-co/cordon-cli/cmd.Version=1.2.3" -o build/cordon .
 ```
 
 ## Project layout

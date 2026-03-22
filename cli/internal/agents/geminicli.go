@@ -3,7 +3,7 @@ package agents
 import (
 	"path/filepath"
 
-	"github.com/cordon-co/cordon/internal/claudecfg"
+	"github.com/cordon-co/cordon-cli/internal/claudecfg"
 )
 
 // GeminiCLI configures Google Gemini CLI via .gemini/settings.json.

@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/cordon-co/cordon/internal/flags"
+	"github.com/cordon-co/cordon-cli/internal/flags"
 	"github.com/spf13/cobra"
 )
 

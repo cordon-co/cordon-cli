@@ -13,7 +13,7 @@ cd "$SCRIPT_DIR/../cli"
 
 VERSION="${VERSION:-dev}"
 BUILD_DIR="build"
-LDFLAGS="-X github.com/cordon-co/cordon/cmd.Version=${VERSION}"
+LDFLAGS="-X github.com/cordon-co/cordon-cli/cmd.Version=${VERSION}"
 
 mkdir -p "$BUILD_DIR"
 

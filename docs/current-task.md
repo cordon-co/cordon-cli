@@ -2,13 +2,14 @@
 
 ## Summary
 
-**OpenCode Support** — implementing OpenCode agent integration via a JavaScript plugin installed to `.opencode/plugins/cordon-interface.js`. Unlike other agents that use JSON config hooks, OpenCode uses a JS plugin system. The plugin hooks `tool.execute.before`, formats the tool call as a `cordon hook` JSON payload, spawns `cordon hook` as a subprocess, and throws an error on deny.
+**OpenCode Support / Uninstall Robustness** — completed a bugfix for `cordon uninstall` where OpenCode JSONC parsing failed on valid string content containing `//` (for example schema URLs like `https://...`). `cli/internal/agents/opencode.go` now performs quote-aware comment stripping and trailing-comma removal before JSON parsing, so uninstall cleanly removes Cordon-managed OpenCode config entries without corrupting non-Cordon values.
+
+Relevant requirements: **INS-04**, **INS-05**
 
 ## Key Files
 
-- `cli/internal/agents/opencode.go` — full Install/Remove/Installed implementation (currently a stub)
-- `cli/internal/hook/hook.go` — add OpenCode tool names (`write`, `edit`, `patch`) to `writingTools`; `read` to `readingTools`
-- Plugin template embedded in `opencode.go` or a separate file — the JS content written to `.opencode/plugins/cordon-interface.js`
+- `cli/internal/agents/opencode.go` — JSONC sanitization fix used by OpenCode config read during uninstall
+- `cli/internal/agents/opencode_test.go` — regression tests for URL-preserving JSONC parsing and trailing comma/comment handling
 
 ## OpenCode Tool Names (from docs)
 
@@ -42,7 +43,7 @@ export const CordonInterface = async ({ directory }) => {
 - **Command Rules (CMD-01 through CMD-06)**
 - **Tests** — 17 tests across `cli/internal/store/` and `cli/tests/`
 
-## Next Steps (after this task)
+## Next Steps
 
 1. **SAF-01 (remaining)** — add destructive command built-in rules
 2. **CLI-03/04** — `cordon login` / `cordon logout`

@@ -136,7 +136,7 @@ Capabilities: activity heatmaps, most accessed/denied/pass-issued files, user ac
 - `irm cordon.sh/install.ps1 | iex` — Windows (WSL required for hooks)
 - GitHub Actions builds Go binary for macOS arm64/x64, Linux x64/arm64, Windows x64 on tagged release
 - Extension packaged and released alongside CLI, shared version number
-- Repo: `github.com/cordon-co/cordon` (CLI + extension, open source when ready)
+- Repo: `github.com/cordon-co/cordon-cli` (CLI + extension, open source when ready)
 - Web service: separate private repo
 
 ## Open Source Boundary

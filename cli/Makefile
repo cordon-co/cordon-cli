@@ -1,5 +1,5 @@
 VERSION ?= dev
-LDFLAGS := -ldflags "-X github.com/cordon-co/cordon/cmd.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X github.com/cordon-co/cordon-cli/cmd.Version=$(VERSION)"
 BUILD   := build
 
 .PHONY: build build-all clean fmt vet \

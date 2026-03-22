@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cordon-co/cordon/internal/hook"
-	"github.com/cordon-co/cordon/internal/reporoot"
-	"github.com/cordon-co/cordon/internal/store"
+	"github.com/cordon-co/cordon-cli/internal/hook"
+	"github.com/cordon-co/cordon-cli/internal/reporoot"
+	"github.com/cordon-co/cordon-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
