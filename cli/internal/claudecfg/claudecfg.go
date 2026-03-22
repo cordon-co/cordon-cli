@@ -21,7 +21,10 @@ const (
 	MCPRelPath        = ".mcp.json"
 	VSCodeMCPRelPath  = ".vscode/mcp.json"
 	VSCodeHookRelPath = ".github/hooks/cordon.json"
-	CursorMCPRelPath  = ".cursor/mcp.json"
+	CursorMCPRelPath   = ".cursor/mcp.json"
+	CursorCLIRelPath   = ".cursor/cli.json"
+	CursorHookRelPath  = ".cursor/hooks.json"
+	CursorMCPToolPerm  = "Mcp(cordon:*)"
 )
 
 // ReadSettings reads and unmarshals the settings file into a generic map.
@@ -120,6 +123,95 @@ func WriteVSCodeHookFile(path string) error {
 		},
 	}
 	return WriteAtomic(path, data)
+}
+
+// AddCursorHookEntry inserts the Cordon hook into the preToolUse array
+// in a Cursor hooks.json file. Idempotent: does nothing if already present.
+// Preserves existing hooks and ensures version field is set.
+func AddCursorHookEntry(data map[string]interface{}) {
+	// Ensure version field exists.
+	if _, ok := data["version"]; !ok {
+		data["version"] = float64(1)
+	}
+
+	hooks := GetOrCreateMap(data, "hooks")
+	preToolUse := GetOrCreateSlice(hooks, "preToolUse")
+
+	if hasCursorCordonHook(preToolUse) {
+		return
+	}
+
+	newEntry := map[string]interface{}{
+		"command": CordonCommand,
+	}
+	hooks["preToolUse"] = append(preToolUse, newEntry)
+	data["hooks"] = hooks
+}
+
+// RemoveCursorHookEntry removes the Cordon hook from the preToolUse array
+// in a Cursor hooks.json file.
+func RemoveCursorHookEntry(data map[string]interface{}) {
+	hooksRaw, ok := data["hooks"]
+	if !ok {
+		return
+	}
+	hooks, ok := hooksRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	ptuRaw, ok := hooks["preToolUse"]
+	if !ok {
+		return
+	}
+	ptu, ok := ptuRaw.([]interface{})
+	if !ok {
+		return
+	}
+
+	filtered := ptu[:0]
+	for _, item := range ptu {
+		if isCursorCordonHook(item) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	if len(filtered) == 0 {
+		delete(hooks, "preToolUse")
+	} else {
+		hooks["preToolUse"] = filtered
+	}
+
+	if len(hooks) == 0 {
+		delete(data, "hooks")
+	} else {
+		data["hooks"] = hooks
+	}
+}
+
+// HasCursorCordonHook reports whether the preToolUse slice contains a
+// Cordon hook entry.
+func HasCursorCordonHook(ptu []interface{}) bool {
+	return hasCursorCordonHook(ptu)
+}
+
+func hasCursorCordonHook(ptu []interface{}) bool {
+	for _, item := range ptu {
+		if isCursorCordonHook(item) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCursorCordonHook(item interface{}) bool {
+	entry, ok := item.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	cmd, ok := entry["command"].(string)
+	return ok && cmd == CordonCommand
 }
 
 // AddVSCodeMCPEntry inserts the Cordon MCP server entry into VS Code's
@@ -228,19 +320,42 @@ func RemoveEnabledMCPServer(data map[string]interface{}) {
 // AddMCPToolPermission adds the cordon MCP tool to the permissions allow list
 // so agents can invoke it without a manual approval prompt. Idempotent.
 func AddMCPToolPermission(data map[string]interface{}) {
-	perms := GetOrCreateMap(data, "permissions")
-	allow := GetOrCreateSlice(perms, "allow")
-	for _, v := range allow {
-		if s, ok := v.(string); ok && s == CordonMCPToolPerm {
-			return
-		}
-	}
-	perms["allow"] = append(allow, CordonMCPToolPerm)
-	data["permissions"] = perms
+	addPermissionAllow(data, CordonMCPToolPerm)
 }
 
 // RemoveMCPToolPermission removes the cordon MCP tool from the permissions allow list.
 func RemoveMCPToolPermission(data map[string]interface{}) {
+	removePermissionAllow(data, CordonMCPToolPerm)
+}
+
+// AddCursorMCPToolPermission adds the Cursor-format cordon MCP permission
+// to the permissions allow list. Idempotent.
+func AddCursorMCPToolPermission(data map[string]interface{}) {
+	addPermissionAllow(data, CursorMCPToolPerm)
+}
+
+// RemoveCursorMCPToolPermission removes the Cursor-format cordon MCP
+// permission from the permissions allow list.
+func RemoveCursorMCPToolPermission(data map[string]interface{}) {
+	removePermissionAllow(data, CursorMCPToolPerm)
+}
+
+// addPermissionAllow adds a permission string to the permissions.allow array.
+// Idempotent.
+func addPermissionAllow(data map[string]interface{}, perm string) {
+	perms := GetOrCreateMap(data, "permissions")
+	allow := GetOrCreateSlice(perms, "allow")
+	for _, v := range allow {
+		if s, ok := v.(string); ok && s == perm {
+			return
+		}
+	}
+	perms["allow"] = append(allow, perm)
+	data["permissions"] = perms
+}
+
+// removePermissionAllow removes a permission string from the permissions.allow array.
+func removePermissionAllow(data map[string]interface{}, perm string) {
 	permsRaw, ok := data["permissions"]
 	if !ok {
 		return
@@ -259,7 +374,7 @@ func RemoveMCPToolPermission(data map[string]interface{}) {
 	}
 	filtered := allow[:0]
 	for _, v := range allow {
-		if s, ok := v.(string); ok && s == CordonMCPToolPerm {
+		if s, ok := v.(string); ok && s == perm {
 			continue
 		}
 		filtered = append(filtered, v)

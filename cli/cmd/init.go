@@ -12,7 +12,6 @@ import (
 	"github.com/cordon-co/cordon/internal/agents"
 	"github.com/cordon-co/cordon/internal/codexpolicy"
 	"github.com/cordon-co/cordon/internal/flags"
-	"github.com/cordon-co/cordon/internal/reporoot"
 	"github.com/cordon-co/cordon/internal/store"
 	"github.com/cordon-co/cordon/internal/tui"
 	"github.com/spf13/cobra"
@@ -40,15 +39,14 @@ type initResult struct {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	root, warn, err := reporoot.Find()
+	// init always operates on the current working directory — it must not
+	// walk up the tree (that would find ~/.cordon/ and initialise in $HOME).
+	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("init: find repo root: %w", err)
-	}
-	if warn != "" {
-		fmt.Fprintln(cmd.ErrOrStderr(), "warning:", warn)
+		return fmt.Errorf("init: get working directory: %w", err)
 	}
 
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := filepath.Abs(cwd)
 	if err != nil {
 		return fmt.Errorf("init: resolve repo root: %w", err)
 	}
