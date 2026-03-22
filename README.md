@@ -22,9 +22,6 @@
   <a href="https://github.com/cordon-co/cordon-cli/releases/latest"><img src="https://img.shields.io/github/downloads/cordon-co/cordon-cli/total" alt="Downloads" /></a>
 </p>
 
-https://img.shields.io/github/downloads/cordon-co/cordon-cli/total
-
-
 ---
 
 ## Installation
