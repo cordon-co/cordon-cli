@@ -64,8 +64,8 @@ The interactive setup will detect installed agents and let you select which ones
 
 ## Supported Agents
 
-| Agent | Support | Mechanism | Hook Based Enforcement | MCP Elicitation Support |
-|-------|---------|-----------|---------|-----------|
+| Agent | Support | Hook Based Enforcement | MCP Elicitation Support |
+|-------|---------|------------------------|-------------------------|
 | Claude Code | First class | Yes ✓ | Yes ✓ |
 | Cursor | First class | Yes ✓ | Yes ✓ |
 | VS Code Chat (Copilot) | First class | Yes ✓ | Yes ✓ |
