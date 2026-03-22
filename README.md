@@ -66,12 +66,12 @@ The interactive setup will detect installed agents and let you select which ones
 
 | Agent | Support | Hook Based Enforcement | MCP Elicitation Support |
 |-------|---------|------------------------|-------------------------|
-| Claude Code | First class | ✓ Yes | ✓ Yes |
-| Cursor | First class | ✓ Yes | ✓ Yes |
-| VS Code Chat (Copilot) | First class | ✓ Yes | ✓ Yes |
-| Gemini CLI | Effective | ✓ Yes | ⤫ No |
-| OpenCode | Effective | ✓ Yes | ⤫ No |
-| Codex | Limited | ⤫ No | ⤫ No |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/claudecode-color.svg" /> Claude Code | First class | ✓ Yes | ✓ Yes |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/cursor.svg" /> Cursor | First class | ✓ Yes | ✓ Yes |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/copilot-color.svg" /> VS Code Chat (Copilot) | First class | ✓ Yes | ✓ Yes |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/gemini-color.svg" /> Gemini CLI | Effective | ✓ Yes | ⤫ No |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/opencode.svg" /> OpenCode | Effective | ✓ Yes | ⤫ No |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/codex-color.svg" /> Codex | Limited | ⤫ No | ⤫ No |
 
 ## Commands
 
