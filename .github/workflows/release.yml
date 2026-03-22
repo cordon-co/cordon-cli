@@ -36,4 +36,3 @@ jobs:
             cli/build/cordon-darwin-amd64
             cli/build/cordon-linux-amd64
             cli/build/cordon-linux-arm64
-            cli/build/cordon-windows-amd64.exe

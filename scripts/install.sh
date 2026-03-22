@@ -37,8 +37,7 @@ detect_platform() {
   case "$OS" in
     Linux*)  OS="linux" ;;
     Darwin*) OS="darwin" ;;
-    MINGW*|MSYS*|CYGWIN*) OS="windows" ;;
-    *) error "unsupported OS: $OS" ;;
+    *) error "unsupported OS: $OS (Windows is not currently supported)" ;;
   esac
 
   case "$ARCH" in
@@ -93,12 +92,7 @@ install_binary() {
   need_cmd curl
   need_cmd chmod
 
-  EXT=""
-  if [ "$OS" = "windows" ]; then
-    EXT=".exe"
-  fi
-
-  ARTIFACT="${BINARY}-${OS}-${ARCH}${EXT}"
+  ARTIFACT="${BINARY}-${OS}-${ARCH}"
   URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARTIFACT}"
 
   TMPDIR="$(mktemp -d)"
@@ -116,13 +110,13 @@ install_binary() {
   # Install — use sudo only if needed
   mkdir -p "$INSTALL_DIR" 2>/dev/null || true
   if [ -w "$INSTALL_DIR" ]; then
-    mv "${TMPDIR}/${ARTIFACT}" "${INSTALL_DIR}/${BINARY}${EXT}"
+    mv "${TMPDIR}/${ARTIFACT}" "${INSTALL_DIR}/${BINARY}"
   else
     log "elevated permissions required to install to ${INSTALL_DIR}"
-    sudo mv "${TMPDIR}/${ARTIFACT}" "${INSTALL_DIR}/${BINARY}${EXT}"
+    sudo mv "${TMPDIR}/${ARTIFACT}" "${INSTALL_DIR}/${BINARY}"
   fi
 
-  log "installed ${BINARY} to ${INSTALL_DIR}/${BINARY}${EXT}"
+  log "installed ${BINARY} to ${INSTALL_DIR}/${BINARY}"
 }
 
 # ---------------------------------------------------------------------------
