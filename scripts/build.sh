@@ -21,7 +21,7 @@ build_target() {
   local os="$1" arch="$2" ext="${3:-}"
   local out="${BUILD_DIR}/cordon-${os}-${arch}${ext}"
   echo "  building ${out}..."
-  GOOS="$os" GOARCH="$arch" go build -ldflags "$LDFLAGS" -o "$out" .
+  GOOS="$os" GOARCH="$arch" go build -ldflags "$LDFLAGS" -o "$out" ./cmd/cordon
 }
 
 if [[ "${1:-}" == "all" ]]; then
@@ -34,6 +34,6 @@ if [[ "${1:-}" == "all" ]]; then
   echo "Done. Artifacts in ${BUILD_DIR}/"
 else
   echo "Building for current platform (version: ${VERSION})"
-  go build -ldflags "$LDFLAGS" -o "${BUILD_DIR}/cordon" .
+  go build -ldflags "$LDFLAGS" -o "${BUILD_DIR}/cordon" ./cmd/cordon
   echo "Done. Binary at ${BUILD_DIR}/cordon"
 fi

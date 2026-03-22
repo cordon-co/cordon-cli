@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("resolve repo root: " + err.Error())
 	}
-	out, err := exec.Command("go", "build", "-o", binaryPath, repoRoot).CombinedOutput()
+	out, err := exec.Command("go", "build", "-o", binaryPath, filepath.Join(repoRoot, "cmd", "cordon")).CombinedOutput()
 	if err != nil {
 		panic("build cordon binary: " + err.Error() + "\n" + string(out))
 	}
