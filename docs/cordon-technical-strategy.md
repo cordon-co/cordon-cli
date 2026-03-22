@@ -50,7 +50,7 @@ Single binary serving as CLI, hook engine, and MCP server.
 - `cordon sync` — manual policy sync with cloud
 - `cordon status` — auth state, policy summary, integrity check
 - `cordon check` — integrity verification of hooks, config, MCP, policy database
-- `cordon remove` — clean uninstall, removes only Cordon entries from all configs
+- `cordon uninstall` — clean uninstall, removes only Cordon entries from all configs
 - All commands support `--json` for structured output
 
 ### IDE Extension (VS Code, TypeScript)

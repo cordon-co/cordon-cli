@@ -6,7 +6,7 @@ Go binary that serves as the CLI, hook enforcement engine, and MCP server for [C
 
 ```
 cordon init                          Initialise Cordon in the current repository
-cordon remove                        Uninstall Cordon from the current repository
+cordon uninstall                     Uninstall Cordon from the current repository
 cordon status                        Show auth state, policy summary, and integrity check
 cordon login                         Authenticate via GitHub OAuth
 cordon logout                        Clear stored credentials
@@ -77,7 +77,7 @@ main.go
 cmd/
   root.go          root command, --json and --mcp flags
   init.go
-  remove.go
+  uninstall.go
   login.go / logout.go
   status.go / sync.go
   hook.go          invoked by agent PreToolUse hook config (hidden from help)

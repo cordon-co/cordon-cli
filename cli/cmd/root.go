@@ -55,7 +55,7 @@ func init() {
 		syncCmd,
 		hookCmd,
 		logCmd,
-		removeCmd,
+		uninstallCmd,
 		versionCmd,
 		file.Cmd,
 		pass.Cmd,

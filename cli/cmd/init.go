@@ -175,6 +175,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("    deny  %s\n", f)
 		}
 	}
+	if hasAgent(selectedIDs, "cursor") {
+		fmt.Println("\n  Note: Cordon MCP will need to be enabled in Cursor Settings -> Tools and MCP")
+	}
 	return nil
 }
 

@@ -70,7 +70,7 @@ Claude Code supports multiple matcher groups in the same hook event array, and m
 
 Cordon writes to `settings.local.json` (the local override file, not committed) rather than `settings.json` (the project file, committed). This means Cordon's hook wiring never appears in the team's committed config — it's managed locally by the Cordon CLI and extension.
 
-Uninstall (`cordon remove`) parses the settings file and removes only the Cordon entries, leaving everything else intact.
+Uninstall (`cordon uninstall`) parses the settings file and removes only the Cordon entries, leaving everything else intact.
 
 ## Why Fail-Open
 

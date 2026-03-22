@@ -2,7 +2,7 @@
 
 ## Summary
 
-Completed: **Cursor Agent Support** — implemented full Cursor IDE agent integration. Cursor already uses `.claude/settings.local.json` for hook enforcement (shared with Claude Code), so only the MCP server entry needed Cursor-specific configuration. Added `.cursor/mcp.json` support using the `mcpServers` key format. Cursor now appears as an installable agent in `cordon init` TUI and is properly cleaned up by `cordon remove`.
+Completed: **Cursor Agent Support** — implemented full Cursor IDE agent integration. Cursor already uses `.claude/settings.local.json` for hook enforcement (shared with Claude Code), so only the MCP server entry needed Cursor-specific configuration. Added `.cursor/mcp.json` support using the `mcpServers` key format. Cursor now appears as an installable agent in `cordon init` TUI and is properly cleaned up by `cordon uninstall`.
 
 ## Key Files
 
