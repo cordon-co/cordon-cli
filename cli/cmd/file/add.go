@@ -28,7 +28,6 @@ var addCmd = &cobra.Command{
 }
 
 func init() {
-	addCmd.Flags().BoolVar(&guardian, "guardian", false, "Create a guardian file rule (requires guardian/admin role)")
 	addCmd.Flags().BoolVar(&preventRead, "prevent-read", false, "Also block agent read access (e.g. for credential files)")
 	addCmd.Flags().BoolVar(&allow, "allow", false, "Create an allow file rule (permits access, overrides deny rules)")
 }
