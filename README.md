@@ -95,7 +95,7 @@ cordon pass list [--all]
 cordon pass revoke <pass-id>
 ```
 
-All commands accept `--json` for structured output consumed by the IDE extension.
+All commands accept `--json` for structured output. Schemas not finalised at this time.
 
 ## Build
 
