@@ -2,7 +2,8 @@ cli/build/
 .cordon/
 .vscode/
 .cursor/
-.gemini
+.opencode/
+.gemini/
 .env
 .mcp.json
 .github/hooks/
