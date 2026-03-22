@@ -18,7 +18,6 @@
   <a href="https://goreportcard.com/report/github.com/cordon-co/cordon-cli"><img src="https://goreportcard.com/badge/github.com/cordon-co/cordon-cli" alt="Go Report Card" /></a>
   <a href="https://github.com/cordon-co/cordon-cli/actions/workflows/test.yml"><img src="https://github.com/cordon-co/cordon-cli/actions/workflows/test.yml/badge.svg" alt="Tests" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSL--1.1-orange" alt="License" /></a>
-  <a href="https://github.com/cordon-co/cordon-cli/actions/workflows/codeql.yml"><img src="https://github.com/cordon-co/cordon-cli/actions/workflows/codeql.yml/badge.svg" alt="CodeQL" /></a>
   <a href="https://github.com/cordon-co/cordon-cli"><img src="https://img.shields.io/github/languages/top/cordon-co/cordon-cli" alt="Top Language" /></a>
   <a href="https://github.com/cordon-co/cordon-cli/releases"><img src="https://img.shields.io/github/downloads/cordon-co/cordon-cli/total" alt="Downloads" /></a>
   <a href="https://github.com/cordon-co/cordon-cli/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/cordon-co/cordon-cli" alt="Go Version" /></a>
