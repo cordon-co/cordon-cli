@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://cordon.sh"><img src="https://img.shields.io/badge/website-cordon.sh-blue" alt="Website" /></a>
   <a href="https://github.com/cordon-co/cordon-cli/releases/latest"><img src="https://img.shields.io/github/v/release/cordon-co/cordon-cli" alt="Latest Release" /></a>
-  <a href="https://goreportcard.com/report/github.com/cordon-co/cordon-cli"><img src="https://goreportcard.com/badge/github.com/cordon-co/cordon-cli" alt="Go Report Card" /></a>
+  <a href="https://goreportcard.com/report/github.com/cordon-co/cordon-cli"><img src="https://img.shields.io/badge/go%20report-A%2B-brightgreen.svg?style=flat" alt="Go Report Card" /></a>
   <a href="https://github.com/cordon-co/cordon-cli/actions/workflows/test.yml"><img src="https://github.com/cordon-co/cordon-cli/actions/workflows/test.yml/badge.svg" alt="Tests" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSL--1.1-orange" alt="License" /></a>
   <a href="https://github.com/cordon-co/cordon-cli"><img src="https://img.shields.io/github/languages/top/cordon-co/cordon-cli" alt="Top Language" /></a>
@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/cordon-co/cordon-cli/main/scripts/i
 **With Go:**
 
 ```sh
-go install github.com/cordon-co/cordon-cli@latest
+go install github.com/cordon-co/cordon-cli/cmd/cordon@latest
 ```
 
 ## Quick Start
