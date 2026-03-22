@@ -14,7 +14,7 @@ import (
 type VSCopilot struct{}
 
 func (v *VSCopilot) ID() string          { return "vs-copilot" }
-func (v *VSCopilot) DisplayName() string { return "VS Code Copilot" }
+func (v *VSCopilot) DisplayName() string { return "VS Code Chat" }
 func (v *VSCopilot) Installable() bool   { return true }
 
 func (v *VSCopilot) Install(repoRoot string) error {

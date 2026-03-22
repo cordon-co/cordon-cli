@@ -29,12 +29,11 @@ type Agent interface {
 
 var registry = []Agent{
 	&ClaudeCode{},
-	&VSCopilot{},
-	&Codex{},
 	&Cursor{},
+	&VSCopilot{},
 	&GeminiCLI{},
-	&KiloCode{},
 	&OpenCode{},
+	&Codex{},
 }
 
 // All returns the full ordered list of known agents.
