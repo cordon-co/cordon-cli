@@ -23,6 +23,19 @@
 
 ---
 
+## Supported Agents
+
+| Agent | Support | Hook Based Enforcement | MCP Elicitation Support |
+|-------|---------|------------------------|-------------------------|
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/claude-color.svg" /> Claude Code | First class | ✓ Yes | ✓ Yes |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/cursor.svg" /> Cursor | First class | ✓ Yes | ✓ Yes |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/copilot-color.svg" /> VS Code Chat (Copilot) | First class | ✓ Yes | ✓ Yes |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/gemini-color.svg" /> Gemini CLI | Effective | ✓ Yes | ⤫ No |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/opencode.svg" /> OpenCode | Effective | ✓ Yes | ⤫ No |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/codex-color.svg" /> Codex | Limited | ⤫ No | ⤫ No |
+
+---
+
 ## Installation
 
 **Quick install:**
@@ -58,17 +71,6 @@ The interactive setup will detect installed agents and let you select which ones
 
 - To share policies with your team, commit the `.cordon/` directory and any agent config changes (e.g. `.claude/settings.local.json`, `.codex/`).
 - For personal use only, add `.cordon/` to your `.gitignore`.
-
-## Supported Agents
-
-| Agent | Support | Hook Based Enforcement | MCP Elicitation Support |
-|-------|---------|------------------------|-------------------------|
-| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/claude-color.svg" /> Claude Code | First class | ✓ Yes | ✓ Yes |
-| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/cursor.svg" /> Cursor | First class | ✓ Yes | ✓ Yes |
-| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/copilot-color.svg" /> VS Code Chat (Copilot) | First class | ✓ Yes | ✓ Yes |
-| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/gemini-color.svg" /> Gemini CLI | Effective | ✓ Yes | ⤫ No |
-| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/opencode.svg" /> OpenCode | Effective | ✓ Yes | ⤫ No |
-| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/codex-color.svg" /> Codex | Limited | ⤫ No | ⤫ No |
 
 ## Commands
 
