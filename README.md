@@ -127,6 +127,40 @@ Binaries are written to `build/`.
 
 Runs both store-level unit tests and CLI integration tests.
 
+## Uninstallation
+
+**1. Remove Cordon from a repository:**
+
+```sh
+cd your-repo
+cordon uninstall
+```
+
+This removes the `.cordon/` directory and any agent hook configurations that were added by `cordon init`.
+
+**2. Remove app data (optional):**
+
+```sh
+rm -rf ~/.cordon/
+```
+
+This removes credentials, cached policies, audit logs, and other local data.
+
+**3. Remove the binary:**
+
+If installed via the install script:
+
+```sh
+rm ~/.local/bin/cordon
+# or /usr/local/bin/cordon if that's where it was installed
+```
+
+If installed via `go install`:
+
+```sh
+rm ~/go/bin/cordon
+```
+
 ## License
 
 [Business Source License 1.1](LICENSE) — see the LICENSE file for details.
