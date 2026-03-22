@@ -14,14 +14,15 @@ type HookLogEntry struct {
 	Decision  string // "allow" or "deny"
 	OSUser    string
 	Agent     string
+	PassID    string
 }
 
 // InsertHookLog appends a hook invocation to the audit log.
 func InsertHookLog(db *sql.DB, e HookLogEntry) error {
 	_, err := db.Exec(
-		`INSERT INTO hook_log (ts, tool_name, file_path, tool_input, decision, os_user, agent)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		e.Ts, e.ToolName, e.FilePath, e.ToolInput, e.Decision, e.OSUser, e.Agent,
+		`INSERT INTO hook_log (ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.Ts, e.ToolName, e.FilePath, e.ToolInput, e.Decision, e.OSUser, e.Agent, e.PassID,
 	)
 	return err
 }

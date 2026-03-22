@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 )
 
 // MigratePolicyDB creates all tables and indexes in the policy database if
@@ -93,7 +94,8 @@ func MigrateDataDB(db *sql.DB) error {
 			tool_input TEXT    NOT NULL,
 			decision   TEXT    NOT NULL CHECK(decision IN ('allow','deny')),
 			os_user    TEXT    NOT NULL DEFAULT '',
-			agent      TEXT    NOT NULL DEFAULT ''
+			agent      TEXT    NOT NULL DEFAULT '',
+			pass_id    TEXT    NOT NULL DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS hook_log_ts        ON hook_log(ts)`,
 		`CREATE INDEX IF NOT EXISTS hook_log_file_path ON hook_log(file_path)`,
@@ -164,5 +166,24 @@ func MigrateDataDB(db *sql.DB) error {
 			return err
 		}
 	}
+
+	// Additive column migrations for existing databases.
+	// ALTER TABLE … ADD COLUMN is a no-op error when the column already exists;
+	// we ignore that specific error ("duplicate column name").
+	alterStmts := []string{
+		`ALTER TABLE hook_log ADD COLUMN pass_id TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range alterStmts {
+		if _, err := db.Exec(stmt); err != nil && !isDuplicateColumn(err) {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// isDuplicateColumn returns true if the error is SQLite's "duplicate column name" error,
+// which occurs when ALTER TABLE ADD COLUMN is run for a column that already exists.
+func isDuplicateColumn(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }

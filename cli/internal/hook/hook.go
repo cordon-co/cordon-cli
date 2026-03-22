@@ -212,7 +212,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 
 	// Reading tools: check against prevent-read file rules.
 	if readingTools[payload.ToolName] {
-		allowed, _ := checkRead(rdChecker, filePath, payload.Cwd)
+		allowed, readPassID := checkRead(rdChecker, filePath, payload.Cwd)
 		if !allowed {
 			event := &Event{
 				ToolName:  payload.ToolName,
@@ -231,6 +231,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 			FilePath:  filePath,
 			ToolInput: payload.ToolInput,
 			Decision:  DecisionAllow,
+			PassID:    readPassID,
 			Cwd:       payload.Cwd,
 		}, nil
 	}

@@ -220,6 +220,7 @@ func logHookEvent(event *hook.Event) {
 		Decision:  string(event.Decision),
 		OSUser:    store.CurrentOSUser(),
 		Agent:     hookAgent,
+		PassID:    event.PassID,
 	}
 
 	if err := store.InsertHookLog(db, entry); err != nil {

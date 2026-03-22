@@ -78,7 +78,7 @@ The interactive setup will detect installed agents and let you select which ones
 ```
 cordon init                          Initialise Cordon in the current repository
 cordon uninstall                     Uninstall Cordon from the current repository
-cordon log [--since] [--date] [--agent] [--file] [--denied-only] [--follow] [--export csv]
+cordon log [--since] [--date] [--agent] [--file] [--allow] [--deny] [--granted] [--pass] [--follow] [--export csv]
 cordon file add [--guardian] [--allow] [--prevent-read] <pattern>
 cordon file list
 cordon file remove <pattern>

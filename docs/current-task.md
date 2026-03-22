@@ -2,28 +2,15 @@
 
 ## Summary
 
-**Agent identification in hooks + improved `cordon log`**
-
-1. Added `--agent` flag to `cordon hook` so each agent platform self-identifies in audit logs. Each agent's hook installation now writes `cordon hook --agent <id>` (e.g. `claude-code`, `cursor`, `gemini-cli`, `vs-copilot`, `opencode`). The agent value is stored in the existing `agent` column of `hook_log` and `audit_log`.
-
-2. Improved `cordon log` with new filtering and streaming capabilities:
-   - Default time window: last 24 hours (was unlimited)
-   - `--date 2026-03-22` — filter to a specific calendar date
-   - `--agent claude-code` — filter by agent platform
-   - `--follow` / `-f` — stream new entries in real-time (1s poll)
-   - All flags work with `--json` (follow mode uses NDJSON)
-
-## Key Files
-
-- `cli/cmd/hook.go` — `--agent` flag on hook command, flows into `HookLogEntry.Agent`
-- `cli/cmd/log.go` — new `--date`, `--agent`, `--follow` flags; default 24h window; follow polling loop
-- `cli/internal/claudecfg/claudecfg.go` — parameterized hook command (`CordonHookCommand(agent)`), prefix-based detection for backwards compat
-- `cli/internal/store/logview.go` — `Agent` and `Until` fields on `LogFilter`, applied in both query functions
-- `cli/internal/agents/*.go` — each agent passes its ID to hook entry functions
-- `cli/internal/agents/opencode.go` — plugin JS updated with `--agent opencode` spawn args
+No active task. Ready for next assignment.
 
 ## Previously Completed
 
+- **Pass traceability in hook audit logs** — `pass_id` column added to `hook_log` table, `HookLogEntry` struct, `InsertHookLog`, `logHookEvent`, and `queryHookLog` SELECT/scan. Pass-authorized hook decisions are now fully traceable via `cordon log --json`
+
+
+- **Agent identification in hooks** — `--agent` flag on `cordon hook`, each agent install writes its ID
+- **Improved `cordon log`** — default 24h, `--date`, `--agent`, `--follow`/`-f`, NDJSON streaming
 - **OpenCode Support / Uninstall Robustness** (INS-04, INS-05)
 - **Gemini CLI Support**
 - **CLI-07 — Interactive Agent Platform Selection on Init**

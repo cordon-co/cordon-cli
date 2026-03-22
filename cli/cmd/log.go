@@ -23,7 +23,10 @@ import (
 )
 
 var logFile string
-var logDeniedOnly bool
+var logAllow bool
+var logDeny bool
+var logGranted bool
+var logPass bool
 var logSince string
 var logDate string
 var logAgent string
@@ -40,7 +43,10 @@ var logCmd = &cobra.Command{
 
 func init() {
 	logCmd.Flags().StringVar(&logFile, "file", "", "Filter by file path (substring match)")
-	logCmd.Flags().BoolVar(&logDeniedOnly, "denied-only", false, "Show only denied hook operations")
+	logCmd.Flags().BoolVar(&logAllow, "allow", false, "Show allowed hook events")
+	logCmd.Flags().BoolVar(&logDeny, "deny", false, "Show denied hook events")
+	logCmd.Flags().BoolVar(&logGranted, "granted", false, "Show hook events authorized by a pass")
+	logCmd.Flags().BoolVar(&logPass, "pass", false, "Show pass lifecycle events (issue, revoke, expire)")
 	logCmd.Flags().StringVar(&logSince, "since", "", "Show entries newer than duration (e.g. 24h, 7d, 90m)")
 	logCmd.Flags().StringVar(&logDate, "date", "", "Show entries for a specific date (e.g. 2026-03-22)")
 	logCmd.Flags().StringVar(&logAgent, "agent", "", "Filter by agent platform (e.g. claude-code, cursor)")
@@ -81,9 +87,12 @@ func runLog(cmd *cobra.Command, args []string) error {
 	}
 
 	filter := store.LogFilter{
-		File:       logFile,
-		DeniedOnly: logDeniedOnly,
-		Agent:      logAgent,
+		File:    logFile,
+		Allow:   logAllow,
+		Deny:    logDeny,
+		Granted: logGranted,
+		Pass:    logPass,
+		Agent:   logAgent,
 	}
 
 	// Time window: --date, --since, or default 24h.
@@ -252,6 +261,9 @@ func formatLogEntry(buf *bytes.Buffer, e store.UnifiedEntry) {
 	}
 	if e.Agent != "" {
 		meta = append(meta, "agent: "+e.Agent)
+	}
+	if e.PassID != "" {
+		meta = append(meta, "pass: "+e.PassID)
 	}
 	if e.Detail != "" {
 		meta = append(meta, e.Detail)
