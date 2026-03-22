@@ -64,31 +64,35 @@ The interactive setup will detect installed agents and let you select which ones
 
 ## Supported Agents
 
-| Agent | Support | Mechanism |
-|-------|---------|-----------|
-| Claude Code | First class | PreToolUse hook — hard enforcement |
-| Cursor | First class | PreToolUse hook — hard enforcement |
-| VS Code Chat (Copilot) | First class | PreToolUse hook — hard enforcement |
-| Gemini CLI | MCP | MCP server — elicitation not supported |
-| OpenCode | MCP | MCP server — elicitation not supported |
-| Codex | Limited | model_instructions_file — hooks not properly supported |
+| Agent | Support | Mechanism | Hook Based Enforcement | MCP Elicitation Support |
+|-------|---------|-----------|---------|-----------|
+| Claude Code | First class | Yes ✓ | Yes ✓ |
+| Cursor | First class | Yes ✓ | Yes ✓ |
+| VS Code Chat (Copilot) | First class | Yes ✓ | Yes ✓ |
+| Gemini CLI | Effective | Yes ✓ | No ⤫ |
+| OpenCode | Effective | Yes ✓ | No ⤫ |
+| Codex | Limited | No ⤫ | No ⤫ |
 
 ## Commands
 
 ```
 cordon init                          Initialise Cordon in the current repository
 cordon uninstall                     Uninstall Cordon from the current repository
+cordon version
+
 cordon log [--since] [--date] [--agent] [--file] [--allow] [--deny] [--granted] [--pass] [--follow] [--export csv]
-cordon file add [--guardian] [--allow] [--prevent-read] <pattern>
+
+cordon file add [--allow] [--prevent-read] <pattern>
 cordon file list
 cordon file remove <pattern>
+
 cordon command add [--allow] <pattern>
 cordon command list
 cordon command remove <pattern>
+
 cordon pass issue --file <path> [--duration 60m|24h|7d|1w|indefinite]
 cordon pass list [--all]
 cordon pass revoke <pass-id>
-cordon version
 ```
 
 All commands accept `--json` for structured output consumed by the IDE extension.
