@@ -86,6 +86,9 @@ var writingTools = map[string]bool{
 	// Gemini CLI
 	"write_file": true,
 	"replace":    true,
+	// OpenCode
+	"write": true,
+	"patch": true,
 }
 
 // readingTools is the set of tool names that read file content and are subject
@@ -98,6 +101,8 @@ var readingTools = map[string]bool{
 	"Grep":         true,
 	// VS Code Copilot + Gemini CLI
 	"read_file": true,
+	// OpenCode
+	"read": true,
 }
 
 // copilotTools identifies tools that originate from VS Code Copilot.
@@ -188,7 +193,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 	}
 
 	// Bash tool: check whether the command targets any files via shell write patterns.
-	if payload.ToolName == "Bash" {
+	if payload.ToolName == "Bash" || payload.ToolName == "bash" {
 		return evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker)
 	}
 
