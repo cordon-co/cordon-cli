@@ -1,6 +1,74 @@
-# cordon CLI
+<p align="center">
+  <a href="https://cordon.sh">
+    <img src="docs/assets/Banner.png" alt="Cordon" />
+  </a>
+</p>
 
-Go binary that serves as the CLI, hook enforcement engine, and MCP server for [Cordon](https://cordon.sh).
+<h3 align="center">
+  <a href="https://cordon.sh">cordon.sh</a>
+</h3>
+
+<p align="center">
+  Team-wide access policies and visibility for AI coding agents.
+</p>
+
+<p align="center">
+  <a href="https://cordon.sh"><img src="https://img.shields.io/badge/website-cordon.sh-blue" alt="Website" /></a>
+  <a href="https://github.com/cordon-co/cordon-cli/releases/latest"><img src="https://img.shields.io/github/v/release/cordon-co/cordon-cli" alt="Latest Release" /></a>
+  <a href="https://goreportcard.com/report/github.com/cordon-co/cordon-cli"><img src="https://goreportcard.com/badge/github.com/cordon-co/cordon-cli" alt="Go Report Card" /></a>
+  <a href="https://github.com/cordon-co/cordon-cli/actions/workflows/test.yml"><img src="https://github.com/cordon-co/cordon-cli/actions/workflows/test.yml/badge.svg" alt="Tests" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSL--1.1-orange" alt="License" /></a>
+  <a href="https://github.com/cordon-co/cordon-cli/actions/workflows/codeql.yml"><img src="https://github.com/cordon-co/cordon-cli/actions/workflows/codeql.yml/badge.svg" alt="CodeQL" /></a>
+</p>
+
+---
+
+## Installation
+
+**Quick install:**
+
+```sh
+curl -fsSL cordon.sh/install.sh | sh
+```
+
+**From GitHub directly:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cordon-co/cordon-cli/main/scripts/install.sh | sh
+```
+
+**With Go:**
+
+```sh
+go install github.com/cordon-co/cordon-cli@latest
+```
+
+## Quick Start
+
+**1. Initialise Cordon in your repository:**
+
+```sh
+cd your-repo
+cordon init
+```
+
+The interactive setup will detect installed agents and let you select which ones to enforce policies on.
+
+**2. Commit or ignore the config:**
+
+- To share policies with your team, commit the `.cordon/` directory and any agent config changes (e.g. `.claude/settings.local.json`, `.codex/`).
+- For personal use only, add `.cordon/` to your `.gitignore`.
+
+## Supported Agents
+
+| Agent | Support | Mechanism |
+|-------|---------|-----------|
+| Claude Code | First class | PreToolUse hook — hard enforcement |
+| Cursor | First class | PreToolUse hook — hard enforcement |
+| VS Code Chat (Copilot) | First class | PreToolUse hook — hard enforcement |
+| Gemini CLI | MCP | MCP server — elicitation not supported |
+| OpenCode | MCP | MCP server — elicitation not supported |
+| Codex | Limited | model_instructions_file — hooks not properly supported |
 
 ## Commands
 
@@ -42,7 +110,7 @@ make build-all VERSION=1.0.0
 
 Binaries are written to `build/`.
 
-## Dev install
+## Dev Install
 
 ```sh
 ./scripts/dev-install.sh
@@ -70,7 +138,7 @@ make build VERSION=1.2.3
 go build -ldflags "-X github.com/cordon-co/cordon-cli/cmd.Version=1.2.3" -o build/cordon .
 ```
 
-## Project layout
+## Project Layout
 
 ```
 main.go
@@ -100,3 +168,7 @@ scripts/
 tests/
   cli integration tests
 ```
+
+## License
+
+[Business Source License 1.1](LICENSE) — see the LICENSE file for details.
