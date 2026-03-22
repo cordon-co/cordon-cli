@@ -21,10 +21,11 @@ const (
 	MCPRelPath        = ".mcp.json"
 	VSCodeMCPRelPath  = ".vscode/mcp.json"
 	VSCodeHookRelPath = ".github/hooks/cordon.json"
-	CursorMCPRelPath   = ".cursor/mcp.json"
-	CursorCLIRelPath   = ".cursor/cli.json"
-	CursorHookRelPath  = ".cursor/hooks.json"
-	CursorMCPToolPerm  = "Mcp(cordon:*)"
+	CursorMCPRelPath      = ".cursor/mcp.json"
+	CursorCLIRelPath      = ".cursor/cli.json"
+	CursorHookRelPath     = ".cursor/hooks.json"
+	CursorMCPToolPerm     = "Mcp(cordon:*)"
+	GeminiSettingsRelPath = ".gemini/settings.json"
 )
 
 // ReadSettings reads and unmarshals the settings file into a generic map.
@@ -423,6 +424,81 @@ func isCordonHookGroup(item interface{}) bool {
 			continue
 		}
 		if cmd, ok := hm["command"].(string); ok && cmd == CordonCommand {
+			return true
+		}
+	}
+	return false
+}
+
+// AddGeminiHookEntry inserts the Cordon hook group into the BeforeTool array
+// of a .gemini/settings.json file. Idempotent: does nothing if already present.
+func AddGeminiHookEntry(data map[string]interface{}) {
+	hooks := GetOrCreateMap(data, "hooks")
+	beforeTool := GetOrCreateSlice(hooks, "BeforeTool")
+
+	if HasGeminiCordonHook(beforeTool) {
+		return
+	}
+
+	newGroup := map[string]interface{}{
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"name":    "cordon-hook",
+				"type":    "command",
+				"command": CordonCommand,
+			},
+		},
+	}
+	hooks["BeforeTool"] = append(beforeTool, newGroup)
+	data["hooks"] = hooks
+}
+
+// RemoveGeminiHookEntry removes the Cordon hook group from the BeforeTool array
+// of a .gemini/settings.json file.
+func RemoveGeminiHookEntry(data map[string]interface{}) {
+	hooksRaw, ok := data["hooks"]
+	if !ok {
+		return
+	}
+	hooks, ok := hooksRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	btRaw, ok := hooks["BeforeTool"]
+	if !ok {
+		return
+	}
+	bt, ok := btRaw.([]interface{})
+	if !ok {
+		return
+	}
+
+	filtered := bt[:0]
+	for _, item := range bt {
+		if !isCordonHookGroup(item) {
+			filtered = append(filtered, item)
+		}
+	}
+
+	if len(filtered) == 0 {
+		delete(hooks, "BeforeTool")
+	} else {
+		hooks["BeforeTool"] = filtered
+	}
+
+	if len(hooks) == 0 {
+		delete(data, "hooks")
+	} else {
+		data["hooks"] = hooks
+	}
+}
+
+// HasGeminiCordonHook reports whether the BeforeTool slice already contains
+// a Cordon hook group.
+func HasGeminiCordonHook(bt []interface{}) bool {
+	for _, item := range bt {
+		if isCordonHookGroup(item) {
 			return true
 		}
 	}

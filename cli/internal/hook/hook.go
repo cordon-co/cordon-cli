@@ -83,6 +83,9 @@ var writingTools = map[string]bool{
 	"deleteFile":      true,
 	"moveFile":        true,
 	"renameFile":      true,
+	// Gemini CLI
+	"write_file": true,
+	"replace":    true,
 }
 
 // readingTools is the set of tool names that read file content and are subject
@@ -93,7 +96,7 @@ var readingTools = map[string]bool{
 	"Read":         true,
 	"NotebookRead": true,
 	"Grep":         true,
-	// VS Code Copilot
+	// VS Code Copilot + Gemini CLI
 	"read_file": true,
 }
 
