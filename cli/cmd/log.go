@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,6 +25,9 @@ import (
 var logFile string
 var logDeniedOnly bool
 var logSince string
+var logDate string
+var logAgent string
+var logFollow bool
 var logExport string
 
 // logCmd — named logCmd to avoid shadowing the standard library "log" package.
@@ -36,10 +42,21 @@ func init() {
 	logCmd.Flags().StringVar(&logFile, "file", "", "Filter by file path (substring match)")
 	logCmd.Flags().BoolVar(&logDeniedOnly, "denied-only", false, "Show only denied hook operations")
 	logCmd.Flags().StringVar(&logSince, "since", "", "Show entries newer than duration (e.g. 24h, 7d, 90m)")
+	logCmd.Flags().StringVar(&logDate, "date", "", "Show entries for a specific date (e.g. 2026-03-22)")
+	logCmd.Flags().StringVar(&logAgent, "agent", "", "Filter by agent platform (e.g. claude-code, cursor)")
+	logCmd.Flags().BoolVarP(&logFollow, "follow", "f", false, "Stream new entries in real-time")
 	logCmd.Flags().StringVar(&logExport, "export", "", "Export format: csv")
 }
 
 func runLog(cmd *cobra.Command, args []string) error {
+	// Validate flag combinations.
+	if logSince != "" && logDate != "" {
+		return fmt.Errorf("log: --since and --date are mutually exclusive")
+	}
+	if logFollow && logExport != "" {
+		return fmt.Errorf("log: --follow and --export are mutually exclusive")
+	}
+
 	root, warn, err := reporoot.Find()
 	if err != nil {
 		return fmt.Errorf("log: find repo root: %w", err)
@@ -66,13 +83,30 @@ func runLog(cmd *cobra.Command, args []string) error {
 	filter := store.LogFilter{
 		File:       logFile,
 		DeniedOnly: logDeniedOnly,
+		Agent:      logAgent,
 	}
-	if logSince != "" {
+
+	// Time window: --date, --since, or default 24h.
+	if logDate != "" {
+		day, err := time.ParseInLocation("2006-01-02", logDate, time.Local)
+		if err != nil {
+			return fmt.Errorf("log: --date: invalid date %q (expected YYYY-MM-DD)", logDate)
+		}
+		filter.Since = day
+		filter.Until = day.Add(24 * time.Hour)
+	} else if logSince != "" {
 		since, err := parseSinceDuration(logSince)
 		if err != nil {
 			return fmt.Errorf("log: --since: %w", err)
 		}
 		filter.Since = since
+	} else if !logFollow {
+		// Default: last 24 hours.
+		filter.Since = time.Now().Add(-24 * time.Hour)
+	}
+
+	if logFollow {
+		return runLogFollow(db, filter)
 	}
 
 	entries, err := store.ListUnifiedLog(db, filter)
@@ -112,6 +146,80 @@ func runLog(cmd *cobra.Command, args []string) error {
 	}
 	_, err = os.Stdout.Write(buf.Bytes())
 	return err
+}
+
+// runLogFollow polls the database for new entries and streams them to stdout.
+// It exits on SIGINT.
+func runLogFollow(db *sql.DB, filter store.LogFilter) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	// Start from now if no --since was given.
+	if filter.Since.IsZero() {
+		filter.Since = time.Now()
+	}
+
+	// Print a starting marker so the user knows it's running.
+	if !flags.JSON {
+		fmt.Fprintf(os.Stderr, "Following log (ctrl-c to stop)...\n")
+	}
+
+	// Track the last-seen high-water mark to avoid re-printing entries.
+	// The audit_log table uses RFC3339 timestamps with only second precision,
+	// so advancing by microseconds doesn't prevent re-fetching the same row.
+	// Instead we keep a set of recently seen entry fingerprints.
+	seen := make(map[string]struct{})
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			entries, err := store.ListUnifiedLog(db, filter)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cordon: log follow: %v\n", err)
+				continue
+			}
+			if len(entries) == 0 {
+				continue
+			}
+
+			// Build the next seen set from this batch.
+			nextSeen := make(map[string]struct{}, len(entries))
+
+			// Entries come newest-first; print oldest-first for follow mode.
+			for i := len(entries) - 1; i >= 0; i-- {
+				e := entries[i]
+				key := followEntryKey(e)
+				nextSeen[key] = struct{}{}
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				if flags.JSON {
+					out, _ := json.Marshal(e)
+					fmt.Println(string(out))
+				} else {
+					var buf bytes.Buffer
+					formatLogEntry(&buf, e)
+					os.Stdout.Write(buf.Bytes())
+				}
+			}
+
+			seen = nextSeen
+
+			// Advance the Since cursor to the newest entry's timestamp.
+			// Entries within the same second will be deduped by the seen set.
+			filter.Since = entries[0].Time
+		}
+	}
+}
+
+// followEntryKey returns a deduplication key for a unified log entry.
+func followEntryKey(e store.UnifiedEntry) string {
+	return e.Time.Format(time.RFC3339Nano) + "|" + e.EventType + "|" + e.ToolName + "|" + e.FilePath + "|" + e.Detail
 }
 
 // formatLogEntry writes a two-line coloured entry to buf.

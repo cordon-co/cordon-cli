@@ -78,12 +78,7 @@ The interactive setup will detect installed agents and let you select which ones
 ```
 cordon init                          Initialise Cordon in the current repository
 cordon uninstall                     Uninstall Cordon from the current repository
-cordon status                        Show auth state, policy summary, and integrity check
-cordon login                         Authenticate via GitHub OAuth
-cordon logout                        Clear stored credentials
-cordon sync                          Sync policy and audit data with Cordon Cloud
-cordon hook                          Evaluate a PreToolUse hook payload (reads JSON from stdin)
-cordon log [--file] [--denied-only] [--since] [--export csv]
+cordon log [--since] [--date] [--agent] [--file] [--denied-only] [--follow] [--export csv]
 cordon file add [--guardian] [--allow] [--prevent-read] <pattern>
 cordon file list
 cordon file remove <pattern>
@@ -94,7 +89,6 @@ cordon pass issue --file <path> [--duration 60m|24h|7d|1w|indefinite]
 cordon pass list [--all]
 cordon pass revoke <pass-id>
 cordon version
-cordon --mcp                         Run as a stdio MCP server
 ```
 
 All commands accept `--json` for structured output consumed by the IDE extension.
@@ -128,49 +122,6 @@ Binaries are written to `build/`.
 ```
 
 Runs both store-level unit tests and CLI integration tests.
-
-## Release
-
-Tagged pushes (`v*`) trigger the GitHub Actions release workflow, which cross-compiles all targets and attaches the binaries to the GitHub release.
-
-Version is injected at build time:
-
-```sh
-make build VERSION=1.2.3
-# or
-go build -ldflags "-X github.com/cordon-co/cordon-cli/cmd.Version=1.2.3" -o build/cordon .
-```
-
-## Project Layout
-
-```
-main.go
-cmd/
-  root.go          root command, --json and --mcp flags
-  init.go
-  uninstall.go
-  login.go / logout.go
-  status.go / sync.go
-  hook.go          invoked by agent PreToolUse hook config (hidden from help)
-  log.go
-  version.go
-  file/            file add|list|remove
-  command/         command add|list|remove
-  pass/            pass issue|list|revoke
-internal/
-  store/           SQLite database layer (policy.db and data.db)
-  hook/            hook evaluation logic
-  reporoot/        repository root detection
-  claudecfg/       .claude/settings.local.json management
-  codexpolicy/     Codex policy file generation
-  flags/           shared flag state
-scripts/
-  build.sh
-  dev-install.sh
-  test.sh
-tests/
-  cli integration tests
-```
 
 ## License
 

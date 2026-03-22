@@ -2,38 +2,29 @@
 
 ## Summary
 
-**OpenCode Support / Uninstall Robustness** — completed a bugfix for `cordon uninstall` where OpenCode JSONC parsing failed on valid string content containing `//` (for example schema URLs like `https://...`). `cli/internal/agents/opencode.go` now performs quote-aware comment stripping and trailing-comma removal before JSON parsing, so uninstall cleanly removes Cordon-managed OpenCode config entries without corrupting non-Cordon values.
+**Agent identification in hooks + improved `cordon log`**
 
-Relevant requirements: **INS-04**, **INS-05**
+1. Added `--agent` flag to `cordon hook` so each agent platform self-identifies in audit logs. Each agent's hook installation now writes `cordon hook --agent <id>` (e.g. `claude-code`, `cursor`, `gemini-cli`, `vs-copilot`, `opencode`). The agent value is stored in the existing `agent` column of `hook_log` and `audit_log`.
+
+2. Improved `cordon log` with new filtering and streaming capabilities:
+   - Default time window: last 24 hours (was unlimited)
+   - `--date 2026-03-22` — filter to a specific calendar date
+   - `--agent claude-code` — filter by agent platform
+   - `--follow` / `-f` — stream new entries in real-time (1s poll)
+   - All flags work with `--json` (follow mode uses NDJSON)
 
 ## Key Files
 
-- `cli/internal/agents/opencode.go` — JSONC sanitization fix used by OpenCode config read during uninstall
-- `cli/internal/agents/opencode_test.go` — regression tests for URL-preserving JSONC parsing and trailing comma/comment handling
-
-## OpenCode Tool Names (from docs)
-
-Writing: `write`, `edit`, `patch`
-Reading: `read`, `grep`
-Shell: `bash`
-Other: `glob`, `list`, `lsp`, `skill`, `todowrite`, `todoread`, `webfetch`, `websearch`, `question`
-
-## Plugin Hook API
-
-```javascript
-export const CordonInterface = async ({ directory }) => {
-  return {
-    "tool.execute.before": async (input, output) => {
-      // input.tool = tool name, output.args = tool arguments
-      // Spawn `cordon hook` with JSON payload on stdin
-      // Exit 2 = deny (throw Error), Exit 0 = allow
-    }
-  }
-}
-```
+- `cli/cmd/hook.go` — `--agent` flag on hook command, flows into `HookLogEntry.Agent`
+- `cli/cmd/log.go` — new `--date`, `--agent`, `--follow` flags; default 24h window; follow polling loop
+- `cli/internal/claudecfg/claudecfg.go` — parameterized hook command (`CordonHookCommand(agent)`), prefix-based detection for backwards compat
+- `cli/internal/store/logview.go` — `Agent` and `Until` fields on `LogFilter`, applied in both query functions
+- `cli/internal/agents/*.go` — each agent passes its ID to hook entry functions
+- `cli/internal/agents/opencode.go` — plugin JS updated with `--agent opencode` spawn args
 
 ## Previously Completed
 
+- **OpenCode Support / Uninstall Robustness** (INS-04, INS-05)
 - **Gemini CLI Support**
 - **CLI-07 — Interactive Agent Platform Selection on Init**
 - **Zone → File Rule Rename**

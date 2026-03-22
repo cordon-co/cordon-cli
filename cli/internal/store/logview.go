@@ -12,6 +12,8 @@ type LogFilter struct {
 	File       string    // substring match on file_path; empty = no filter
 	DeniedOnly bool      // only hook_deny events (audit_log excluded when set)
 	Since      time.Time // zero = no filter
+	Until      time.Time // zero = no filter; exclusive upper bound
+	Agent      string    // exact match on agent; empty = no filter
 }
 
 // UnifiedEntry is a normalised view of a row from either hook_log or audit_log.
@@ -66,6 +68,14 @@ func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 		q += ` AND ts >= ?`
 		args = append(args, f.Since.UnixMicro())
 	}
+	if !f.Until.IsZero() {
+		q += ` AND ts < ?`
+		args = append(args, f.Until.UnixMicro())
+	}
+	if f.Agent != "" {
+		q += ` AND agent = ?`
+		args = append(args, f.Agent)
+	}
 	q += ` ORDER BY ts DESC`
 
 	rows, err := db.Query(q, args...)
@@ -109,6 +119,14 @@ func queryAuditLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 	if !f.Since.IsZero() {
 		q += ` AND timestamp >= ?`
 		args = append(args, f.Since.UTC().Format(time.RFC3339))
+	}
+	if !f.Until.IsZero() {
+		q += ` AND timestamp < ?`
+		args = append(args, f.Until.UTC().Format(time.RFC3339))
+	}
+	if f.Agent != "" {
+		q += ` AND agent = ?`
+		args = append(args, f.Agent)
 	}
 	q += ` ORDER BY timestamp DESC`
 
