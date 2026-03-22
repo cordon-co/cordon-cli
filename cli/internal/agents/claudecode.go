@@ -20,7 +20,7 @@ func (c *ClaudeCode) Install(repoRoot string) error {
 	if err != nil {
 		return err
 	}
-	claudecfg.AddHookEntry(settingsData)
+	claudecfg.AddHookEntry(settingsData, "claude-code")
 	claudecfg.AddEnabledMCPServer(settingsData)
 	claudecfg.AddMCPToolPermission(settingsData)
 	claudecfg.RemoveMCPEntry(settingsData) // clean up any legacy MCP entry

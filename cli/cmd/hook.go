@@ -25,6 +25,8 @@ import (
 //	0 — allow
 //	1 — malformed payload or IO error (cobra handles this via returned error)
 //	2 — deny (os.Exit called directly to bypass cobra's exit-1 handling)
+var hookAgent string
+
 var hookCmd = &cobra.Command{
 	Use:    "hook",
 	Short:  "Evaluate a PreToolUse hook payload (reads JSON from stdin)",
@@ -217,7 +219,7 @@ func logHookEvent(event *hook.Event) {
 		ToolInput: string(event.ToolInput),
 		Decision:  string(event.Decision),
 		OSUser:    store.CurrentOSUser(),
-		Agent:     "", // TODO: detect agent platform from environment
+		Agent:     hookAgent,
 	}
 
 	if err := store.InsertHookLog(db, entry); err != nil {

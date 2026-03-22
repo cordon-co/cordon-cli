@@ -31,7 +31,7 @@ func (v *VSCopilot) Install(repoRoot string) error {
 
 	// Hook in .github/hooks/cordon.json
 	vscodeHookPath := filepath.Join(repoRoot, claudecfg.VSCodeHookRelPath)
-	return claudecfg.WriteVSCodeHookFile(vscodeHookPath)
+	return claudecfg.WriteVSCodeHookFile(vscodeHookPath, "vs-copilot")
 }
 
 func (v *VSCopilot) Remove(repoRoot string) error {

@@ -47,6 +47,9 @@ func init() {
 	// --mcp: run as a stdio MCP server. Meaningful only on root, not subcommands.
 	rootCmd.Flags().BoolVar(&mcpMode, "mcp", false, "Run as a stdio MCP server")
 
+	// --agent: identifies which agent platform is invoking the hook.
+	hookCmd.Flags().StringVar(&hookAgent, "agent", "", "Agent platform identifier (e.g. claude-code, cursor)")
+
 	rootCmd.AddCommand(
 		initCmd,
 		loginCmd,

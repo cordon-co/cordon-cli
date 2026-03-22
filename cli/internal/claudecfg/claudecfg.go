@@ -10,10 +10,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
-	CordonCommand     = "cordon hook"
+	cordonHookBase    = "cordon hook"
 	CordonMatcher     = "*"
 	CordonMCPKey      = "cordon"
 	CordonMCPToolPerm = "mcp__cordon__cordon_request_access"
@@ -27,6 +28,15 @@ const (
 	CursorMCPToolPerm     = "Mcp(cordon:*)"
 	GeminiSettingsRelPath = ".gemini/settings.json"
 )
+
+// CordonHookCommand returns the hook command string for the given agent.
+// If agent is empty, returns the base command without an --agent flag.
+func CordonHookCommand(agent string) string {
+	if agent == "" {
+		return cordonHookBase
+	}
+	return cordonHookBase + " --agent " + agent
+}
 
 // ReadSettings reads and unmarshals the settings file into a generic map.
 // Returns an empty map if the file does not exist.
@@ -47,12 +57,14 @@ func ReadSettings(path string) (map[string]interface{}, error) {
 }
 
 // AddHookEntry inserts the Cordon hook group into the PreToolUse array.
-// Idempotent: does nothing if a Cordon entry is already present.
-func AddHookEntry(data map[string]interface{}) {
+// If a Cordon entry already exists, its command is updated to include the
+// agent flag. Otherwise a new entry is created.
+func AddHookEntry(data map[string]interface{}, agent string) {
+	cmd := CordonHookCommand(agent)
 	hooks := GetOrCreateMap(data, "hooks")
 	preToolUse := GetOrCreateSlice(hooks, "PreToolUse")
 
-	if HasCordonHook(preToolUse) {
+	if updateCordonHookGroupCommand(preToolUse, cmd) {
 		return
 	}
 
@@ -61,7 +73,7 @@ func AddHookEntry(data map[string]interface{}) {
 		"hooks": []interface{}{
 			map[string]interface{}{
 				"type":    "command",
-				"command": CordonCommand,
+				"command": cmd,
 			},
 		},
 	}
@@ -112,13 +124,13 @@ func RemoveHookEntry(data map[string]interface{}) {
 // WriteVSCodeHookFile writes the VS Code Copilot hook file at the given path.
 // The file is a standalone JSON config (not merged into an existing file),
 // so it is written atomically and is idempotent.
-func WriteVSCodeHookFile(path string) error {
+func WriteVSCodeHookFile(path string, agent string) error {
 	data := map[string]interface{}{
 		"hooks": map[string]interface{}{
 			"PreToolUse": []interface{}{
 				map[string]interface{}{
 					"type":    "command",
-					"command": CordonCommand,
+					"command": CordonHookCommand(agent),
 				},
 			},
 		},
@@ -129,7 +141,9 @@ func WriteVSCodeHookFile(path string) error {
 // AddCursorHookEntry inserts the Cordon hook into the preToolUse array
 // in a Cursor hooks.json file. Idempotent: does nothing if already present.
 // Preserves existing hooks and ensures version field is set.
-func AddCursorHookEntry(data map[string]interface{}) {
+func AddCursorHookEntry(data map[string]interface{}, agent string) {
+	cmd := CordonHookCommand(agent)
+
 	// Ensure version field exists.
 	if _, ok := data["version"]; !ok {
 		data["version"] = float64(1)
@@ -138,12 +152,12 @@ func AddCursorHookEntry(data map[string]interface{}) {
 	hooks := GetOrCreateMap(data, "hooks")
 	preToolUse := GetOrCreateSlice(hooks, "preToolUse")
 
-	if hasCursorCordonHook(preToolUse) {
+	if updateCursorCordonHookCommand(preToolUse, cmd) {
 		return
 	}
 
 	newEntry := map[string]interface{}{
-		"command": CordonCommand,
+		"command": cmd,
 	}
 	hooks["preToolUse"] = append(preToolUse, newEntry)
 	data["hooks"] = hooks
@@ -212,7 +226,25 @@ func isCursorCordonHook(item interface{}) bool {
 		return false
 	}
 	cmd, ok := entry["command"].(string)
-	return ok && cmd == CordonCommand
+	return ok && strings.HasPrefix(cmd, cordonHookBase)
+}
+
+// updateCursorCordonHookCommand finds the existing Cordon hook entry and updates
+// its command string. Returns true if an entry was found (regardless of whether
+// the command changed).
+func updateCursorCordonHookCommand(ptu []interface{}, cmd string) bool {
+	for _, item := range ptu {
+		entry, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		c, ok := entry["command"].(string)
+		if ok && strings.HasPrefix(c, cordonHookBase) {
+			entry["command"] = cmd
+			return true
+		}
+	}
+	return false
 }
 
 // AddVSCodeMCPEntry inserts the Cordon MCP server entry into VS Code's
@@ -404,7 +436,7 @@ func HasCordonHook(ptu []interface{}) bool {
 }
 
 // isCordonHookGroup reports whether a PreToolUse array element is the Cordon
-// hook group, identified by any inner hook with command == CordonCommand.
+// hook group, identified by any inner hook whose command starts with "cordon hook".
 func isCordonHookGroup(item interface{}) bool {
 	group, ok := item.(map[string]interface{})
 	if !ok {
@@ -423,8 +455,39 @@ func isCordonHookGroup(item interface{}) bool {
 		if !ok {
 			continue
 		}
-		if cmd, ok := hm["command"].(string); ok && cmd == CordonCommand {
+		if cmd, ok := hm["command"].(string); ok && strings.HasPrefix(cmd, cordonHookBase) {
 			return true
+		}
+	}
+	return false
+}
+
+// updateCordonHookGroupCommand finds the existing Cordon hook group and updates
+// its inner hook command string. Returns true if found (regardless of whether
+// the command changed).
+func updateCordonHookGroupCommand(ptu []interface{}, cmd string) bool {
+	for _, item := range ptu {
+		group, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		hooksRaw, ok := group["hooks"]
+		if !ok {
+			continue
+		}
+		innerHooks, ok := hooksRaw.([]interface{})
+		if !ok {
+			continue
+		}
+		for _, h := range innerHooks {
+			hm, ok := h.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if c, ok := hm["command"].(string); ok && strings.HasPrefix(c, cordonHookBase) {
+				hm["command"] = cmd
+				return true
+			}
 		}
 	}
 	return false
@@ -432,11 +495,12 @@ func isCordonHookGroup(item interface{}) bool {
 
 // AddGeminiHookEntry inserts the Cordon hook group into the BeforeTool array
 // of a .gemini/settings.json file. Idempotent: does nothing if already present.
-func AddGeminiHookEntry(data map[string]interface{}) {
+func AddGeminiHookEntry(data map[string]interface{}, agent string) {
+	cmd := CordonHookCommand(agent)
 	hooks := GetOrCreateMap(data, "hooks")
 	beforeTool := GetOrCreateSlice(hooks, "BeforeTool")
 
-	if HasGeminiCordonHook(beforeTool) {
+	if updateCordonHookGroupCommand(beforeTool, cmd) {
 		return
 	}
 
@@ -445,7 +509,7 @@ func AddGeminiHookEntry(data map[string]interface{}) {
 			map[string]interface{}{
 				"name":    "cordon-hook",
 				"type":    "command",
-				"command": CordonCommand,
+				"command": cmd,
 			},
 		},
 	}

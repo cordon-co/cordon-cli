@@ -32,7 +32,7 @@ export const CordonEnforcement = async ({ $, directory }) => {
         cwd: directory,
       });
       try {
-        const proc = Bun.spawn(["cordon", "hook"], {
+        const proc = Bun.spawn(["cordon", "hook", "--agent", "opencode"], {
           stdin: new Blob([payload]),
           stdout: "pipe",
           stderr: "pipe",

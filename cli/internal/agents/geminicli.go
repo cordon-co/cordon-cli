@@ -21,7 +21,7 @@ func (g *GeminiCLI) Install(repoRoot string) error {
 	if err != nil {
 		return err
 	}
-	claudecfg.AddGeminiHookEntry(data)
+	claudecfg.AddGeminiHookEntry(data, "gemini-cli")
 	return claudecfg.WriteAtomic(settingsPath, data)
 }
 

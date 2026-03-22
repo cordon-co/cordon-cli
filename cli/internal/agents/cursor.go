@@ -22,7 +22,7 @@ func (c *Cursor) Install(repoRoot string) error {
 	if err != nil {
 		return err
 	}
-	claudecfg.AddCursorHookEntry(hookData)
+	claudecfg.AddCursorHookEntry(hookData, "cursor")
 	if err := claudecfg.WriteAtomic(hookPath, hookData); err != nil {
 		return err
 	}
