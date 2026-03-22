@@ -66,7 +66,7 @@ The interactive setup will detect installed agents and let you select which ones
 
 | Agent | Support | Hook Based Enforcement | MCP Elicitation Support |
 |-------|---------|------------------------|-------------------------|
-| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/claudecode-color.svg" /> Claude Code | First class | ✓ Yes | ✓ Yes |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/claude-color.svg" /> Claude Code | First class | ✓ Yes | ✓ Yes |
 | <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/cursor.svg" /> Cursor | First class | ✓ Yes | ✓ Yes |
 | <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/copilot-color.svg" /> VS Code Chat (Copilot) | First class | ✓ Yes | ✓ Yes |
 | <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/gemini-color.svg" /> Gemini CLI | Effective | ✓ Yes | ⤫ No |
