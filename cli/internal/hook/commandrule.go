@@ -9,7 +9,7 @@ import (
 type MatchedRule struct {
 	Pattern       string
 	RuleType      string // "deny" or "allow"
-	RuleAuthority string // "standard" or "guardian"
+	RuleAuthority string // "standard" or "elevated"
 }
 
 // CommandChecker checks whether a bash command segment is allowed by command rules.
@@ -59,7 +59,7 @@ func CheckBuiltinRules(command string) *MatchedRule {
 			firstDeny = &MatchedRule{
 				Pattern:       r.Pattern,
 				RuleType:      "deny",
-				RuleAuthority: "guardian",
+				RuleAuthority: "elevated",
 			}
 		}
 	}

@@ -133,6 +133,7 @@ func applyFileRuleAdded(tx *sql.Tx, payload string) error {
 		CreatedBy     string `json:"created_by"`
 		CreatedAt     string `json:"created_at"`
 		UpdatedAt     string `json:"updated_at"`
+		Notify        bool   `json:"notify"`
 	}
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return fmt.Errorf("store: unmarshal file_rule.added: %w", err)
@@ -145,9 +146,9 @@ func applyFileRuleAdded(tx *sql.Tx, payload string) error {
 		p.UpdatedAt = now
 	}
 	_, err := tx.Exec(
-		`INSERT INTO file_rules (id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Pattern, p.FileAccess, p.FileAuthority, p.PreventWrite, p.PreventRead, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
+		`INSERT INTO file_rules (id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at, notify)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Pattern, p.FileAccess, p.FileAuthority, p.PreventWrite, p.PreventRead, p.CreatedBy, p.CreatedAt, p.UpdatedAt, p.Notify,
 	)
 	return err
 }
@@ -195,6 +196,7 @@ func applyCommandRuleAdded(tx *sql.Tx, payload string) error {
 		CreatedBy     string `json:"created_by"`
 		CreatedAt     string `json:"created_at"`
 		UpdatedAt     string `json:"updated_at"`
+		Notify        bool   `json:"notify"`
 	}
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return fmt.Errorf("store: unmarshal command_rule.added: %w", err)
@@ -207,9 +209,9 @@ func applyCommandRuleAdded(tx *sql.Tx, payload string) error {
 		p.UpdatedAt = now
 	}
 	_, err := tx.Exec(
-		`INSERT INTO command_rules (id, pattern, rule_access, rule_authority, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Pattern, p.RuleAccess, p.RuleAuthority, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
+		`INSERT INTO command_rules (id, pattern, rule_access, rule_authority, created_by, created_at, updated_at, notify)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Pattern, p.RuleAccess, p.RuleAuthority, p.CreatedBy, p.CreatedAt, p.UpdatedAt, p.Notify,
 	)
 	return err
 }
@@ -320,6 +322,7 @@ func applyFileRuleAddedReplay(tx *sql.Tx, payload string) error {
 		CreatedBy     string `json:"created_by"`
 		CreatedAt     string `json:"created_at"`
 		UpdatedAt     string `json:"updated_at"`
+		Notify        bool   `json:"notify"`
 	}
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return fmt.Errorf("store: unmarshal file_rule.added replay: %w", err)
@@ -332,9 +335,9 @@ func applyFileRuleAddedReplay(tx *sql.Tx, payload string) error {
 		p.UpdatedAt = now
 	}
 	_, err := tx.Exec(
-		`INSERT OR REPLACE INTO file_rules (id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Pattern, p.FileAccess, p.FileAuthority, p.PreventWrite, p.PreventRead, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
+		`INSERT OR REPLACE INTO file_rules (id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at, notify)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Pattern, p.FileAccess, p.FileAuthority, p.PreventWrite, p.PreventRead, p.CreatedBy, p.CreatedAt, p.UpdatedAt, p.Notify,
 	)
 	return err
 }
@@ -348,6 +351,7 @@ func applyCommandRuleAddedReplay(tx *sql.Tx, payload string) error {
 		CreatedBy     string `json:"created_by"`
 		CreatedAt     string `json:"created_at"`
 		UpdatedAt     string `json:"updated_at"`
+		Notify        bool   `json:"notify"`
 	}
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return fmt.Errorf("store: unmarshal command_rule.added replay: %w", err)
@@ -360,9 +364,9 @@ func applyCommandRuleAddedReplay(tx *sql.Tx, payload string) error {
 		p.UpdatedAt = now
 	}
 	_, err := tx.Exec(
-		`INSERT OR REPLACE INTO command_rules (id, pattern, rule_access, rule_authority, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Pattern, p.RuleAccess, p.RuleAuthority, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
+		`INSERT OR REPLACE INTO command_rules (id, pattern, rule_access, rule_authority, created_by, created_at, updated_at, notify)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Pattern, p.RuleAccess, p.RuleAuthority, p.CreatedBy, p.CreatedAt, p.UpdatedAt, p.Notify,
 	)
 	return err
 }

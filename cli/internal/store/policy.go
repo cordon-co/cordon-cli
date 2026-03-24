@@ -30,16 +30,17 @@ type FileRule struct {
 	ID            string
 	Pattern       string
 	FileType      string // "deny" (blocks access) or "allow" (permits access, overrides deny)
-	FileAuthority string // "standard" (any member) or "guardian" (guardian/admin only)
+	FileAuthority string // "standard" (any member) or "elevated" (elevated/admin only)
 	PreventWrite  bool   // always true for now
 	PreventRead   bool   // opt-in via --prevent-read
 	CreatedBy     string
 	CreatedAt     string // ISO 8601
 	UpdatedAt     string // ISO 8601
+	Notify        bool   // triggers immediate sync when rule is matched
 }
 
 // AddFileRule inserts a new file rule into the policy database.
-// fileAccess is "deny" (default) or "allow". fileAuthority is "standard" or "guardian".
+// fileAccess is "deny" (default) or "allow". fileAuthority is "standard" or "elevated".
 // preventRead enables read enforcement in addition to the always-on write enforcement.
 // Returns an error if the pattern already exists (UNIQUE constraint violation),
 // or if fileAccess is "allow" and preventRead is true (nonsensical combination).
@@ -90,7 +91,7 @@ func AddFileRule(db *sql.DB, pattern, fileAccess, fileAuthority, createdBy strin
 // ListFileRules returns all file rules ordered by creation time.
 func ListFileRules(db *sql.DB) ([]FileRule, error) {
 	rows, err := db.Query(
-		`SELECT id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at
+		`SELECT id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at, notify
 		 FROM file_rules ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -101,12 +102,13 @@ func ListFileRules(db *sql.DB) ([]FileRule, error) {
 	var rules []FileRule
 	for rows.Next() {
 		var f FileRule
-		var pw, pr int
-		if err := rows.Scan(&f.ID, &f.Pattern, &f.FileType, &f.FileAuthority, &pw, &pr, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		var pw, pr, nfy int
+		if err := rows.Scan(&f.ID, &f.Pattern, &f.FileType, &f.FileAuthority, &pw, &pr, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt, &nfy); err != nil {
 			return nil, fmt.Errorf("store: scan file rule: %w", err)
 		}
 		f.PreventWrite = pw != 0
 		f.PreventRead = pr != 0
+		f.Notify = nfy != 0
 		rules = append(rules, f)
 	}
 	return rules, rows.Err()

@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	guardian    bool
+	elevated    bool
 	preventRead bool
 	allow       bool
 )
@@ -30,6 +30,7 @@ var addCmd = &cobra.Command{
 func init() {
 	addCmd.Flags().BoolVar(&preventRead, "prevent-read", false, "Also block agent read access (e.g. for credential files)")
 	addCmd.Flags().BoolVar(&allow, "allow", false, "Create an allow file rule (permits access, overrides deny rules)")
+	addCmd.Flags().BoolVar(&elevated, "elevated", false, "Create an elevated-authority rule (requires elevated/admin permissions to remove)")
 }
 
 type fileAddResult struct {
@@ -71,8 +72,8 @@ func runFileAdd(cmd *cobra.Command, args []string) error {
 		fileAccess = "allow"
 	}
 	fileAuthority := "standard"
-	if guardian {
-		fileAuthority = "guardian"
+	if elevated {
+		fileAuthority = "elevated"
 	}
 
 	user := store.CurrentOSUser()
@@ -127,8 +128,8 @@ func runFileAdd(cmd *cobra.Command, args []string) error {
 	if f.FileType == "allow" {
 		ruleLabel = "allow rule"
 	}
-	if f.FileAuthority == "guardian" {
-		ruleLabel += " (guardian)"
+	if f.FileAuthority == "elevated" {
+		ruleLabel += " (elevated)"
 	}
 	readLabel := ""
 	if f.PreventRead {

@@ -34,14 +34,15 @@ type CommandRule struct {
 	ID            string
 	Pattern       string
 	RuleType      string // "deny" (blocks command) or "allow" (permits command, overrides deny)
-	RuleAuthority string // "standard" (any member) or "guardian" (guardian/admin only)
+	RuleAuthority string // "standard" (any member) or "elevated" (elevated/admin only)
 	CreatedBy     string
 	CreatedAt     string
 	UpdatedAt     string
+	Notify        bool // triggers immediate sync when rule is matched
 }
 
 // AddRule inserts a command rule into the policy database.
-// ruleAccess is "deny" (default) or "allow". ruleAuthority is "standard" or "guardian".
+// ruleAccess is "deny" (default) or "allow". ruleAuthority is "standard" or "elevated".
 // Returns an error if the pattern already exists.
 func AddRule(db *sql.DB, pattern, ruleAccess, ruleAuthority, createdBy string) (*CommandRule, error) {
 	id, err := newUUID()
@@ -82,7 +83,7 @@ func AddRule(db *sql.DB, pattern, ruleAccess, ruleAuthority, createdBy string) (
 // ListRules returns all command rules ordered by creation time.
 func ListRules(db *sql.DB) ([]CommandRule, error) {
 	rows, err := db.Query(
-		`SELECT id, pattern, rule_access, rule_authority, created_by, created_at, updated_at
+		`SELECT id, pattern, rule_access, rule_authority, created_by, created_at, updated_at, notify
 		 FROM command_rules ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -93,10 +94,12 @@ func ListRules(db *sql.DB) ([]CommandRule, error) {
 	var rules []CommandRule
 	for rows.Next() {
 		var r CommandRule
+		var nfy int
 		if err := rows.Scan(&r.ID, &r.Pattern, &r.RuleType, &r.RuleAuthority,
-			&r.CreatedBy, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			&r.CreatedBy, &r.CreatedAt, &r.UpdatedAt, &nfy); err != nil {
 			return nil, fmt.Errorf("store: scan rule: %w", err)
 		}
+		r.Notify = nfy != 0
 		rules = append(rules, r)
 	}
 	return rules, rows.Err()
@@ -104,7 +107,7 @@ func ListRules(db *sql.DB) ([]CommandRule, error) {
 
 // RemoveRule deletes a standard-authority command rule with the given pattern.
 // Returns (true, nil) if removed, (false, nil) if not found.
-// Guardian-authority rules cannot be removed by non-guardians.
+// Elevated-authority rules cannot be removed by non-elevated users.
 func RemoveRule(db *sql.DB, pattern string) (bool, error) {
 	// Look up the rule ID, enforcing standard-authority restriction.
 	var id string

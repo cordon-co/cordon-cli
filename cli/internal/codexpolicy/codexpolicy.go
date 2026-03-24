@@ -70,8 +70,8 @@ func buildContent(rules []store.FileRule) string {
 			continue // allow rules permit access; omit from deny list
 		}
 		label := ""
-		if f.FileAuthority == "guardian" {
-			label = " *(guardian rule — requires guardian/admin pass)*"
+		if f.FileAuthority == "elevated" {
+			label = " *(elevated rule — requires elevated/admin pass)*"
 		}
 		fmt.Fprintf(&b, "- `%s`%s\n", f.Pattern, label)
 	}

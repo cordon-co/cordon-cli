@@ -15,7 +15,7 @@ The CLI is the core of the product. The extension is a thin UI layer that calls 
 ## Core Concepts
 
 - **Perimeter**: the top-level policy boundary for a repository
-- **File Rule**: a file, folder, or glob pattern protected by an access policy. Standard rules (any member) or guardian rules (guardian/admin only)
+- **File Rule**: a file, folder, or glob pattern protected by an access policy. Standard rules (any member) or elevated rules (elevated/admin only)
 - **Pass**: a temporary access grant allowing an agent to write to a protected file. Configured with a duration
 - **Demarcation**: a registered declaration of what an agent is currently working on, visible to the team via CodeLens and the demarcations panel
 

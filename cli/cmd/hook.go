@@ -86,28 +86,30 @@ func buildPolicyChecker() hook.PolicyChecker {
 			return true, "", false
 		}
 
+		notify = rule.Notify
+
 		// File is covered by a file rule. Check for an active pass in the data database.
 		dataDB, err := store.OpenDataDB(absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: open data db: %v\n", err)
-			return false, "", false // has file rule, data DB unavailable — deny
+			return false, "", notify // has file rule, data DB unavailable — deny
 		}
 		defer dataDB.Close()
 
 		if err := store.MigrateDataDB(dataDB); err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: migrate data db: %v\n", err)
-			return false, "", false // has file rule, data DB unavailable — deny
+			return false, "", notify // has file rule, data DB unavailable — deny
 		}
 
 		pass, err := store.ActivePassForPath(dataDB, filePath, absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: pass lookup: %v\n", err)
-			return false, "", false // has file rule, pass lookup failed — deny
+			return false, "", notify // has file rule, pass lookup failed — deny
 		}
 		if pass == nil {
-			return false, "", false // has file rule, no active pass — deny
+			return false, "", notify // has file rule, no active pass — deny
 		}
-		return true, pass.ID, false // has file rule, active pass — allow
+		return true, pass.ID, notify // has file rule, active pass — allow
 	}
 }
 
@@ -137,22 +139,24 @@ func buildReadChecker() hook.ReadChecker {
 			return true, "", false // fail-open or not in a prevent-read file rule
 		}
 
+		notify = rule.Notify
+
 		// File is in a prevent-read file rule. Check for an active pass.
 		dataDB, err := store.OpenDataDB(absRoot)
 		if err != nil {
-			return false, "", false // has file rule, data DB unavailable — deny
+			return false, "", notify // has file rule, data DB unavailable — deny
 		}
 		defer dataDB.Close()
 
 		if err := store.MigrateDataDB(dataDB); err != nil {
-			return false, "", false // has file rule, data DB unavailable — deny
+			return false, "", notify // has file rule, data DB unavailable — deny
 		}
 
 		pass, err := store.ActivePassForPath(dataDB, filePath, absRoot)
 		if err != nil || pass == nil {
-			return false, "", false // has file rule, no active pass — deny
+			return false, "", notify // has file rule, no active pass — deny
 		}
-		return true, pass.ID, false
+		return true, pass.ID, notify
 	}
 }
 
@@ -183,11 +187,13 @@ func buildCommandChecker() hook.CommandChecker {
 			return true, nil, false // fail-open or no match
 		}
 
+		notify = rule.Notify
+
 		return false, &hook.MatchedRule{
 			Pattern:       rule.Pattern,
 			RuleType:      rule.RuleType,
 			RuleAuthority: rule.RuleAuthority,
-		}, false
+		}, notify
 	}
 }
 
