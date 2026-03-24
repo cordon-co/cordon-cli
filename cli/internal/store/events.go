@@ -11,15 +11,15 @@ import (
 
 // PolicyEvent is an immutable record of a policy mutation.
 type PolicyEvent struct {
-	Seq        int64  // local auto-increment
-	EventID    string // UUID v4
-	EventType  string // "file_rule.added", "file_rule.removed", etc.
-	Payload    string // JSON blob
-	Actor      string // GitHub username or OS username
-	Timestamp  string // ISO 8601
-	ParentHash string // hash of previous event
-	Hash       string // SHA-256 of this event's fields
-	ServerSeq  *int64 // nil until server acknowledges
+	Seq        int64  `json:"-"`                        // local auto-increment; not sent to server
+	EventID    string `json:"event_id"`                 // UUID v4
+	EventType  string `json:"event_type"`               // "file_rule.added", "file_rule.removed", etc.
+	Payload    string `json:"payload"`                   // JSON blob
+	Actor      string `json:"actor"`                     // GitHub username or OS username
+	Timestamp  string `json:"timestamp"`                 // ISO 8601
+	ParentHash string `json:"parent_hash"`               // hash of previous event
+	Hash       string `json:"hash"`                      // SHA-256 of this event's fields
+	ServerSeq  *int64 `json:"server_seq,omitempty"`      // nil until server acknowledges
 }
 
 // computeHash computes the SHA-256 hash for an event given its fields and parent hash.
