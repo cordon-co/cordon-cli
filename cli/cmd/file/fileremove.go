@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/cordon-co/cordon-cli/cli/internal/api"
 	"github.com/cordon-co/cordon-cli/cli/internal/codexpolicy"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
+	cordsync "github.com/cordon-co/cordon-cli/cli/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -80,6 +82,11 @@ func runFileRemove(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not list file rules for Codex policy: %v\n", err)
 		} else if err := codexpolicy.Generate(absRoot, rules); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not regenerate Codex policy: %v\n", err)
+		}
+
+		// Trigger background sync to push the new event immediately.
+		if api.IsLoggedIn() {
+			cordsync.SpawnBackgroundSync(absRoot)
 		}
 	}
 

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/cordon-co/cordon-cli/cli/internal/api"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
+	cordsync "github.com/cordon-co/cordon-cli/cli/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -85,6 +87,11 @@ func runCommandAdd(cmd *cobra.Command, args []string) error {
 				User:      store.CurrentOSUser(),
 			})
 		}
+	}
+
+	// Trigger background sync to push the new event immediately.
+	if api.IsLoggedIn() {
+		cordsync.SpawnBackgroundSync(absRoot)
 	}
 
 	if flags.JSON {

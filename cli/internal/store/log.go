@@ -8,6 +8,7 @@ import (
 
 // HookLogEntry is a single row written to the hook_log table.
 type HookLogEntry struct {
+	ID         int64  // auto-increment primary key; populated by queries, ignored on insert
 	Ts         int64  // Unix microseconds
 	ToolName   string
 	FilePath   string

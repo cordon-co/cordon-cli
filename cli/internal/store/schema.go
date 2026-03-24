@@ -201,6 +201,20 @@ func MigrateDataDB(db *sql.DB) error {
 		}
 	}
 
+	// sync_watermarks — tracks the last-synced row ID for each data table.
+	// Used by cordon sync to push only new rows since the last sync.
+	syncStmts := []string{
+		`CREATE TABLE IF NOT EXISTS sync_watermarks (
+			table_name TEXT PRIMARY KEY,
+			last_id    INTEGER NOT NULL DEFAULT 0
+		)`,
+	}
+	for _, stmt := range syncStmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+
 	// Additive column migrations for existing databases.
 	// ALTER TABLE … ADD COLUMN is a no-op error when the column already exists;
 	// we ignore that specific error ("duplicate column name").

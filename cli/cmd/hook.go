@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/cordon-co/cordon-cli/cli/internal/api"
 	"github.com/cordon-co/cordon-cli/cli/internal/hook"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
+	cordsync "github.com/cordon-co/cordon-cli/cli/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +43,17 @@ var hookCmd = &cobra.Command{
 		// Log every invocation. Logging failures are non-fatal (fail-open).
 		if event != nil {
 			logHookEvent(event)
+
+			// Trigger background sync for authenticated users.
+			// This is cheap: IsLoggedIn() is a file stat, SyncDue() is a file stat,
+			// SpawnBackgroundSync() is a fork+exec that returns immediately.
+			if api.IsLoggedIn() {
+				if absRoot, rootErr := resolveRepoRoot(event.Cwd); rootErr == nil {
+					if event.Notify || cordsync.SyncDue(absRoot) {
+						cordsync.SpawnBackgroundSync(absRoot)
+					}
+				}
+			}
 		}
 
 		if errors.Is(err, hook.ErrDenied) {
