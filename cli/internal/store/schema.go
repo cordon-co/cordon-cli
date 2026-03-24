@@ -60,12 +60,35 @@ func MigratePolicyDB(db *sql.DB) error {
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
 		)`,
+
+		// policy_events — immutable, append-only log of every policy mutation.
+		// The existing file_rules and command_rules tables are projections rebuilt
+		// from this event log. The hash chain provides tamper detection and
+		// deterministic replay for sync.
+		`CREATE TABLE IF NOT EXISTS policy_events (
+			seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_id       TEXT    NOT NULL UNIQUE,
+			event_type     TEXT    NOT NULL,
+			payload        TEXT    NOT NULL,
+			actor          TEXT    NOT NULL,
+			timestamp      TEXT    NOT NULL,
+			parent_hash    TEXT    NOT NULL DEFAULT '',
+			hash           TEXT    NOT NULL,
+			server_seq     INTEGER
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_policy_events_server_seq ON policy_events(server_seq)`,
 	}
 
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
 		}
+	}
+
+	// Migrate existing rules to policy events if the event log is empty but
+	// rules already exist (pre-event-sourcing databases).
+	if err := migrateExistingRulesToEvents(db); err != nil {
+		return err
 	}
 
 	return nil
@@ -172,6 +195,12 @@ func MigrateDataDB(db *sql.DB) error {
 	// we ignore that specific error ("duplicate column name").
 	alterStmts := []string{
 		`ALTER TABLE hook_log ADD COLUMN pass_id TEXT NOT NULL DEFAULT ''`,
+		// Hash chain columns for tamper evidence.
+		`ALTER TABLE hook_log ADD COLUMN notify INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE hook_log ADD COLUMN parent_hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audit_log ADD COLUMN parent_hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audit_log ADD COLUMN hash TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alterStmts {
 		if _, err := db.Exec(stmt); err != nil && !isDuplicateColumn(err) {

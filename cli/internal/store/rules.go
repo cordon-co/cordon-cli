@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -43,13 +44,31 @@ type CommandRule struct {
 // ruleAccess is "deny" (default) or "allow". ruleAuthority is "standard" or "guardian".
 // Returns an error if the pattern already exists.
 func AddRule(db *sql.DB, pattern, ruleAccess, ruleAuthority, createdBy string) (*CommandRule, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
 	id, err := newUUID()
 	if err != nil {
 		return nil, fmt.Errorf("store: generate rule id: %w", err)
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
 
-	r := CommandRule{
+	payload, _ := json.Marshal(map[string]interface{}{
+		"id":             id,
+		"pattern":        pattern,
+		"rule_access":    ruleAccess,
+		"rule_authority": ruleAuthority,
+		"created_by":     createdBy,
+		"created_at":     now,
+		"updated_at":     now,
+	})
+
+	_, err = AppendEvent(db, "command_rule.added", string(payload), createdBy)
+	if err != nil {
+		if isDuplicatePatternError(err) {
+			return nil, fmt.Errorf("store: add rule: %w: %s", ErrDuplicatePattern, pattern)
+		}
+		return nil, fmt.Errorf("store: add rule: %w", err)
+	}
+
+	return &CommandRule{
 		ID:            id,
 		Pattern:       pattern,
 		RuleType:      ruleAccess,
@@ -57,20 +76,7 @@ func AddRule(db *sql.DB, pattern, ruleAccess, ruleAuthority, createdBy string) (
 		CreatedBy:     createdBy,
 		CreatedAt:     now,
 		UpdatedAt:     now,
-	}
-
-	_, err = db.Exec(
-		`INSERT INTO command_rules (id, pattern, rule_access, rule_authority, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Pattern, r.RuleType, r.RuleAuthority, r.CreatedBy, r.CreatedAt, r.UpdatedAt,
-	)
-	if err != nil {
-		if isDuplicatePatternError(err) {
-			return nil, fmt.Errorf("store: add rule: %w: %s", ErrDuplicatePattern, pattern)
-		}
-		return nil, fmt.Errorf("store: add rule: %w", err)
-	}
-	return &r, nil
+	}, nil
 }
 
 // ListRules returns all command rules ordered by creation time.
@@ -100,17 +106,28 @@ func ListRules(db *sql.DB) ([]CommandRule, error) {
 // Returns (true, nil) if removed, (false, nil) if not found.
 // Guardian-authority rules cannot be removed by non-guardians.
 func RemoveRule(db *sql.DB, pattern string) (bool, error) {
-	res, err := db.Exec(
-		`DELETE FROM command_rules WHERE pattern = ? AND rule_authority = 'standard'`, pattern,
-	)
+	// Look up the rule ID, enforcing standard-authority restriction.
+	var id string
+	err := db.QueryRow(
+		`SELECT id FROM command_rules WHERE pattern = ? AND rule_authority = 'standard'`, pattern,
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: remove rule lookup: %w", err)
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"id":      id,
+		"pattern": pattern,
+	})
+
+	_, err = AppendEvent(db, "command_rule.removed", string(payload), CurrentOSUser())
 	if err != nil {
 		return false, fmt.Errorf("store: remove rule: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("store: remove rule rows affected: %w", err)
-	}
-	return n > 0, nil
+	return true, nil
 }
 
 // MatchCommandRule checks whether command matches any rule in the database.

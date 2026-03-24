@@ -18,11 +18,11 @@ type MatchedRule struct {
 // cwd is the agent working directory used to locate the policy database.
 //
 // Return values:
-//   - true,  nil   — command is allowed
-//   - false, rule  — command is blocked; rule describes the matching rule
+//   - true,  nil, false   — command is allowed
+//   - false, rule, notify — command is blocked; rule describes the matching rule
 //
 // A nil CommandChecker allows all commands (fail-open).
-type CommandChecker func(command, cwd string) (allowed bool, matched *MatchedRule)
+type CommandChecker func(command, cwd string) (allowed bool, matched *MatchedRule, notify bool)
 
 // builtinRule is a command rule compiled into the binary.
 type builtinRule struct {

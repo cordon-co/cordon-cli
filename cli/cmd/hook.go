@@ -57,57 +57,57 @@ var hookCmd = &cobra.Command{
 // fails open — it returns (true, "") so the hook allows the write and logs the
 // failure. This matches Cordon's fail-open design principle.
 func buildPolicyChecker() hook.PolicyChecker {
-	return func(filePath, cwd string) (allowed bool, passID string) {
+	return func(filePath, cwd string) (allowed bool, passID string, notify bool) {
 		absRoot, err := resolveRepoRoot(cwd)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: resolve repo root: %v\n", err)
-			return true, "" // fail-open
+			return true, "", false // fail-open
 		}
 
 		policyDB, err := store.OpenPolicyDB(absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: open policy db: %v\n", err)
-			return true, "" // fail-open
+			return true, "", false // fail-open
 		}
 		defer policyDB.Close()
 
 		if err := store.MigratePolicyDB(policyDB); err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: migrate policy db: %v\n", err)
-			return true, "" // fail-open
+			return true, "", false // fail-open
 		}
 
 		rule, err := store.FileRuleForPath(policyDB, filePath, absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: file rule lookup: %v\n", err)
-			return true, "" // fail-open
+			return true, "", false // fail-open
 		}
 		if rule == nil {
 			// File is not covered by any file rule — allow.
-			return true, ""
+			return true, "", false
 		}
 
 		// File is covered by a file rule. Check for an active pass in the data database.
 		dataDB, err := store.OpenDataDB(absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: open data db: %v\n", err)
-			return false, "" // has file rule, data DB unavailable — deny
+			return false, "", false // has file rule, data DB unavailable — deny
 		}
 		defer dataDB.Close()
 
 		if err := store.MigrateDataDB(dataDB); err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: migrate data db: %v\n", err)
-			return false, "" // has file rule, data DB unavailable — deny
+			return false, "", false // has file rule, data DB unavailable — deny
 		}
 
 		pass, err := store.ActivePassForPath(dataDB, filePath, absRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cordon: policy check: pass lookup: %v\n", err)
-			return false, "" // has file rule, pass lookup failed — deny
+			return false, "", false // has file rule, pass lookup failed — deny
 		}
 		if pass == nil {
-			return false, "" // has file rule, no active pass — deny
+			return false, "", false // has file rule, no active pass — deny
 		}
-		return true, pass.ID // has file rule, active pass — allow
+		return true, pass.ID, false // has file rule, active pass — allow
 	}
 }
 
@@ -116,43 +116,43 @@ func buildPolicyChecker() hook.PolicyChecker {
 //
 // Fails open on any infrastructure error.
 func buildReadChecker() hook.ReadChecker {
-	return func(filePath, cwd string) (allowed bool, passID string) {
+	return func(filePath, cwd string) (allowed bool, passID string, notify bool) {
 		absRoot, err := resolveRepoRoot(cwd)
 		if err != nil {
-			return true, "" // fail-open
+			return true, "", false // fail-open
 		}
 
 		policyDB, err := store.OpenPolicyDB(absRoot)
 		if err != nil {
-			return true, "" // fail-open
+			return true, "", false // fail-open
 		}
 		defer policyDB.Close()
 
 		if err := store.MigratePolicyDB(policyDB); err != nil {
-			return true, "" // fail-open
+			return true, "", false // fail-open
 		}
 
 		rule, err := store.FileRuleForPath(policyDB, filePath, absRoot)
 		if err != nil || rule == nil || !rule.PreventRead {
-			return true, "" // fail-open or not in a prevent-read file rule
+			return true, "", false // fail-open or not in a prevent-read file rule
 		}
 
 		// File is in a prevent-read file rule. Check for an active pass.
 		dataDB, err := store.OpenDataDB(absRoot)
 		if err != nil {
-			return false, "" // has file rule, data DB unavailable — deny
+			return false, "", false // has file rule, data DB unavailable — deny
 		}
 		defer dataDB.Close()
 
 		if err := store.MigrateDataDB(dataDB); err != nil {
-			return false, "" // has file rule, data DB unavailable — deny
+			return false, "", false // has file rule, data DB unavailable — deny
 		}
 
 		pass, err := store.ActivePassForPath(dataDB, filePath, absRoot)
 		if err != nil || pass == nil {
-			return false, "" // has file rule, no active pass — deny
+			return false, "", false // has file rule, no active pass — deny
 		}
-		return true, pass.ID
+		return true, pass.ID, false
 	}
 }
 
@@ -162,32 +162,32 @@ func buildReadChecker() hook.ReadChecker {
 //
 // Fails open on any infrastructure error.
 func buildCommandChecker() hook.CommandChecker {
-	return func(command, cwd string) (allowed bool, matched *hook.MatchedRule) {
+	return func(command, cwd string) (allowed bool, matched *hook.MatchedRule, notify bool) {
 		absRoot, err := resolveRepoRoot(cwd)
 		if err != nil {
-			return true, nil // fail-open
+			return true, nil, false // fail-open
 		}
 
 		policyDB, err := store.OpenPolicyDB(absRoot)
 		if err != nil {
-			return true, nil // fail-open
+			return true, nil, false // fail-open
 		}
 		defer policyDB.Close()
 
 		if err := store.MigratePolicyDB(policyDB); err != nil {
-			return true, nil // fail-open
+			return true, nil, false // fail-open
 		}
 
 		rule, err := store.MatchCommandRule(policyDB, command)
 		if err != nil || rule == nil {
-			return true, nil // fail-open or no match
+			return true, nil, false // fail-open or no match
 		}
 
 		return false, &hook.MatchedRule{
 			Pattern:       rule.Pattern,
 			RuleType:      rule.RuleType,
 			RuleAuthority: rule.RuleAuthority,
-		}
+		}, false
 	}
 }
 
@@ -221,6 +221,7 @@ func logHookEvent(event *hook.Event) {
 		OSUser:    store.CurrentOSUser(),
 		Agent:     hookAgent,
 		PassID:    event.PassID,
+		Notify:    event.Notify,
 	}
 
 	if err := store.InsertHookLog(db, entry); err != nil {
