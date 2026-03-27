@@ -44,7 +44,6 @@ internal/
   hook/            hook evaluation logic
   reporoot/        walks up to find .cordon/
   claudecfg/       .claude/settings.local.json management
-  codexpolicy/     .cordon/codex-policy.md generation
   flags/           shared flag state (avoids circular imports)
 tests/
   CLI integration tests — build binary, exercise via subprocess

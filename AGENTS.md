@@ -28,7 +28,7 @@ The CLI is the core of the product. The extension is a thin UI layer that calls 
 - Operational data (audit logs, pass state, demarcation history) is stored in `~/.cordon/repos/<repo-hash>/data.db` and never committed to the repo
 - User credentials and global preferences are stored in `~/.cordon/`
 - Hook integration is additive: Cordon appends its entries to existing hook configs without modifying other hooks
-- Codex enforcement uses a managed `model_instructions_file` at `.cordon/codex-policy.md`
+- Codex enforcement uses a PreToolUse hook in `.codex/hooks.json` with a feature flag in `.codex/config.toml`
 
 ## Enforcement Matrix
 
@@ -36,7 +36,7 @@ The CLI is the core of the product. The extension is a thin UI layer that calls 
 |-------|-----------|-------------------|
 | Claude Code | PreToolUse hook via `cordon hook` | Hard (pre-execution block) |
 | VS Code agents (Copilot) | PreToolUse hook via `cordon hook` | Hard (pre-execution block) |
-| Codex | model_instructions_file + notify hook | Soft (model-compliant) |
+| Codex | PreToolUse hook via `cordon hook` | Hard (pre-execution block) |
 | Any MCP agent | Cordon MCP server | Soft (best-effort) |
 
 ## Additional Documentation

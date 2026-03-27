@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/cordon-co/cordon-cli/cli/internal/agents"
-	"github.com/cordon-co/cordon-cli/cli/internal/codexpolicy"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
 	"github.com/cordon-co/cordon-cli/cli/internal/tui"
@@ -132,17 +131,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		addedCommands, addedFiles, err = promptAndAddGuardrails(cmd, policyDB)
 		if err != nil {
 			return fmt.Errorf("init: guardrails: %w", err)
-		}
-	}
-
-	// Regenerate codex-policy.md after guardrails are added (if Codex was selected).
-	if hasAgent(selectedIDs, "codex") {
-		rules, err := store.ListFileRules(policyDB)
-		if err != nil {
-			return fmt.Errorf("init: list file rules for Codex policy: %w", err)
-		}
-		if err := codexpolicy.Generate(absRoot, rules); err != nil {
-			return fmt.Errorf("init: generate Codex policy: %w", err)
 		}
 	}
 

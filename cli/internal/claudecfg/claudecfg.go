@@ -27,6 +27,8 @@ const (
 	CursorHookRelPath     = ".cursor/hooks.json"
 	CursorMCPToolPerm     = "Mcp(cordon:*)"
 	GeminiSettingsRelPath = ".gemini/settings.json"
+	CodexHookRelPath      = ".codex/hooks.json"
+	CodexConfigRelPath    = ".codex/config.toml"
 )
 
 // CordonHookCommand returns the hook command string for the given agent.
@@ -567,6 +569,154 @@ func HasGeminiCordonHook(bt []interface{}) bool {
 		}
 	}
 	return false
+}
+
+// EnsureCodexFeatureFlag reads the config.toml at the given path and ensures
+// [features] codex_hooks = true is present. Preserves all other content.
+// Creates the file and parent directories if they do not exist.
+func EnsureCodexFeatureFlag(path string) error {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		raw = nil
+	} else if err != nil {
+		return fmt.Errorf("claudecfg: read %s: %w", path, err)
+	}
+
+	content := string(raw)
+	updated := ensureTomlFeatureFlag(content)
+	if updated == content {
+		return nil // already present
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("claudecfg: create directory for %s: %w", path, err)
+	}
+	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+// RemoveCodexFeatureFlag removes codex_hooks = true from the [features] section
+// of the config.toml at the given path. Removes the [features] header if the
+// section becomes empty. Returns nil if the file does not exist.
+func RemoveCodexFeatureFlag(path string) error {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("claudecfg: read %s: %w", path, err)
+	}
+
+	content := string(raw)
+	updated := removeTomlFeatureFlag(content)
+	if updated == content {
+		return nil // not present
+	}
+
+	// If file is now empty (or only whitespace), remove it.
+	if strings.TrimSpace(updated) == "" {
+		return os.Remove(path)
+	}
+	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+// ensureTomlFeatureFlag ensures the TOML content contains [features] with
+// codex_hooks = true. Preserves all other content.
+func ensureTomlFeatureFlag(content string) string {
+	lines := strings.Split(content, "\n")
+
+	// Check if codex_hooks = true already exists under [features].
+	inFeatures := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "[features]" {
+			inFeatures = true
+			continue
+		}
+		if inFeatures {
+			if strings.HasPrefix(trimmed, "[") {
+				break // hit next section
+			}
+			if strings.HasPrefix(trimmed, "codex_hooks") && strings.Contains(trimmed, "true") {
+				return content // already present
+			}
+		}
+	}
+
+	if inFeatures {
+		// [features] section exists but missing codex_hooks. Insert after the header.
+		var result []string
+		inserted := false
+		for _, line := range lines {
+			result = append(result, line)
+			if !inserted && strings.TrimSpace(line) == "[features]" {
+				result = append(result, "codex_hooks = true")
+				inserted = true
+			}
+		}
+		return strings.Join(result, "\n")
+	}
+
+	// No [features] section. Append it.
+	sep := ""
+	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+		sep = "\n"
+	}
+	if len(content) > 0 && !strings.HasSuffix(strings.TrimRight(content, "\n"), "") {
+		sep = "\n"
+	}
+	return content + sep + "\n[features]\ncodex_hooks = true\n"
+}
+
+// removeTomlFeatureFlag removes codex_hooks = true from the [features] section.
+// If the section becomes empty, removes the [features] header too.
+func removeTomlFeatureFlag(content string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	inFeatures := false
+	featuresIdx := -1
+	featuresHasOtherKeys := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "[features]" {
+			inFeatures = true
+			featuresIdx = len(result)
+			result = append(result, line)
+			continue
+		}
+
+		if inFeatures && strings.HasPrefix(trimmed, "[") {
+			inFeatures = false
+		}
+
+		if inFeatures && strings.HasPrefix(trimmed, "codex_hooks") && strings.Contains(trimmed, "true") {
+			// Skip this line (remove it).
+			// Also skip a trailing blank line if it's the last line before next section or EOF.
+			_ = i
+			continue
+		}
+
+		if inFeatures && trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			featuresHasOtherKeys = true
+		}
+
+		result = append(result, line)
+	}
+
+	// If [features] section is now empty, remove the header line too.
+	if featuresIdx >= 0 && !featuresHasOtherKeys {
+		filtered := make([]string, 0, len(result))
+		for i, line := range result {
+			if i == featuresIdx {
+				continue // skip [features] header
+			}
+			filtered = append(filtered, line)
+		}
+		result = filtered
+	}
+
+	return strings.Join(result, "\n")
 }
 
 // GetOrCreateMap retrieves a map[string]interface{} value from parent by key,
