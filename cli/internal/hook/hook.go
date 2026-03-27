@@ -498,9 +498,10 @@ func readDenyReason(path string) string {
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request read access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
-			"Do not attempt to read this file through any alternative method, "+
-			"including shell commands such as cat, tail, head, less, or grep. "+
-			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"If the user says they have issued the pass, you may proceed with accessing the file. "+
+			"Do not attempt to write to this file through any alternative method, "+
+			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You should use the MCP or ask the user for a pass. "+
 			"This is an enforced policy restriction, not a technical error. ",
 		path,
 	)
@@ -515,9 +516,10 @@ func policyDenyReason(path string) string {
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
+			"If the user says they have issued the pass, you may proceed with accessing the file. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
-			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You should use the MCP or ask the user for a pass. "+
 			"This is an enforced policy restriction, not a technical error. ",
 		path,
 	)
@@ -532,11 +534,12 @@ func policyBashDenyReason(primary string, all []string) string {
 	}
 	return fmt.Sprintf(
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
-			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
+			"To request access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
+			"If the user says they have issued the pass, you may proceed with accessing the file. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
-			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You should use the MCP or ask the user for a pass. "+
 			"This is an enforced policy restriction, not a technical error. ",
 		target,
 	)
