@@ -43,7 +43,7 @@ internal/
   store/           SQLite layer — policy.db (repo) and data.db (user)
   hook/            hook evaluation logic
   reporoot/        walks up to find .cordon/
-  claudecfg/       .claude/settings.local.json management
+  config/          per-agent config file management (one file per platform)
   flags/           shared flag state (avoids circular imports)
 tests/
   CLI integration tests — build binary, exercise via subprocess

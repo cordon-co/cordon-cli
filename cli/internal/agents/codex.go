@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cordon-co/cordon-cli/cli/internal/claudecfg"
+	"github.com/cordon-co/cordon-cli/cli/internal/config"
 )
 
 // Codex configures OpenAI Codex via a PreToolUse hook in .codex/hooks.json
@@ -18,36 +18,45 @@ func (c *Codex) DisplayName() string { return "Codex" }
 func (c *Codex) Installable() bool   { return true }
 
 func (c *Codex) Install(repoRoot string) error {
+	configPath := filepath.Join(repoRoot, config.CodexConfigRelPath)
+
 	// Enable the codex_hooks feature flag in .codex/config.toml.
-	configPath := filepath.Join(repoRoot, claudecfg.CodexConfigRelPath)
-	if err := claudecfg.EnsureCodexFeatureFlag(configPath); err != nil {
+	if err := config.EnsureCodexFeatureFlag(configPath); err != nil {
+		return err
+	}
+
+	// Add the MCP server entry to .codex/config.toml.
+	if err := config.EnsureCodexMCPServer(configPath); err != nil {
 		return err
 	}
 
 	// Add the PreToolUse hook to .codex/hooks.json.
-	hookPath := filepath.Join(repoRoot, claudecfg.CodexHookRelPath)
-	hookData, err := claudecfg.ReadSettings(hookPath)
+	hookPath := filepath.Join(repoRoot, config.CodexHookRelPath)
+	hookData, err := config.ReadSettings(hookPath)
 	if err != nil {
 		return err
 	}
-	claudecfg.AddHookEntry(hookData, "codex")
-	return claudecfg.WriteAtomic(hookPath, hookData)
+	config.AddHookEntry(hookData, "codex")
+	return config.WriteAtomic(hookPath, hookData)
 }
 
 func (c *Codex) Remove(repoRoot string) error {
 	// Remove the PreToolUse hook from .codex/hooks.json.
-	hookPath := filepath.Join(repoRoot, claudecfg.CodexHookRelPath)
-	hookData, err := claudecfg.ReadSettings(hookPath)
+	hookPath := filepath.Join(repoRoot, config.CodexHookRelPath)
+	hookData, err := config.ReadSettings(hookPath)
 	if err == nil {
-		claudecfg.RemoveHookEntry(hookData)
-		if err := claudecfg.WriteAtomic(hookPath, hookData); err != nil {
+		config.RemoveHookEntry(hookData)
+		if err := config.WriteAtomic(hookPath, hookData); err != nil {
 			return err
 		}
 	}
 
-	// Remove the codex_hooks feature flag from .codex/config.toml.
-	configPath := filepath.Join(repoRoot, claudecfg.CodexConfigRelPath)
-	if err := claudecfg.RemoveCodexFeatureFlag(configPath); err != nil {
+	// Remove cordon entries from .codex/config.toml.
+	configPath := filepath.Join(repoRoot, config.CodexConfigRelPath)
+	if err := config.RemoveCodexMCPServer(configPath); err != nil {
+		return err
+	}
+	if err := config.RemoveCodexFeatureFlag(configPath); err != nil {
 		return err
 	}
 
@@ -61,8 +70,8 @@ func (c *Codex) Remove(repoRoot string) error {
 }
 
 func (c *Codex) Installed(repoRoot string) bool {
-	hookPath := filepath.Join(repoRoot, claudecfg.CodexHookRelPath)
-	data, err := claudecfg.ReadSettings(hookPath)
+	hookPath := filepath.Join(repoRoot, config.CodexHookRelPath)
+	data, err := config.ReadSettings(hookPath)
 	if err != nil {
 		return false
 	}
@@ -82,5 +91,5 @@ func (c *Codex) Installed(repoRoot string) bool {
 	if !ok {
 		return false
 	}
-	return claudecfg.HasCordonHook(ptu)
+	return config.HasCordonHook(ptu)
 }

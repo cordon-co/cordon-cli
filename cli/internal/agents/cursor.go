@@ -3,7 +3,7 @@ package agents
 import (
 	"path/filepath"
 
-	"github.com/cordon-co/cordon-cli/cli/internal/claudecfg"
+	"github.com/cordon-co/cordon-cli/cli/internal/config"
 )
 
 // Cursor configures Cursor IDE via .cursor/hooks.json, .cursor/mcp.json,
@@ -17,64 +17,64 @@ func (c *Cursor) Installable() bool   { return true }
 
 func (c *Cursor) Install(repoRoot string) error {
 	// Hook in .cursor/hooks.json
-	hookPath := filepath.Join(repoRoot, claudecfg.CursorHookRelPath)
-	hookData, err := claudecfg.ReadSettings(hookPath)
+	hookPath := filepath.Join(repoRoot, config.CursorHookRelPath)
+	hookData, err := config.ReadSettings(hookPath)
 	if err != nil {
 		return err
 	}
-	claudecfg.AddCursorHookEntry(hookData, "cursor")
-	if err := claudecfg.WriteAtomic(hookPath, hookData); err != nil {
+	config.AddCursorHookEntry(hookData, "cursor")
+	if err := config.WriteAtomic(hookPath, hookData); err != nil {
 		return err
 	}
 
 	// MCP server in .cursor/mcp.json
-	mcpPath := filepath.Join(repoRoot, claudecfg.CursorMCPRelPath)
-	mcpData, err := claudecfg.ReadSettings(mcpPath)
+	mcpPath := filepath.Join(repoRoot, config.CursorMCPRelPath)
+	mcpData, err := config.ReadSettings(mcpPath)
 	if err != nil {
 		return err
 	}
-	claudecfg.AddMCPEntry(mcpData)
-	if err := claudecfg.WriteAtomic(mcpPath, mcpData); err != nil {
+	config.AddMCPEntry(mcpData)
+	if err := config.WriteAtomic(mcpPath, mcpData); err != nil {
 		return err
 	}
 
 	// MCP tool permission in .cursor/cli.json
-	cliPath := filepath.Join(repoRoot, claudecfg.CursorCLIRelPath)
-	cliData, err := claudecfg.ReadSettings(cliPath)
+	cliPath := filepath.Join(repoRoot, config.CursorCLIRelPath)
+	cliData, err := config.ReadSettings(cliPath)
 	if err != nil {
 		return err
 	}
-	claudecfg.AddCursorMCPToolPermission(cliData)
-	return claudecfg.WriteAtomic(cliPath, cliData)
+	config.AddCursorMCPToolPermission(cliData)
+	return config.WriteAtomic(cliPath, cliData)
 }
 
 func (c *Cursor) Remove(repoRoot string) error {
 	// Remove hook from .cursor/hooks.json
-	hookPath := filepath.Join(repoRoot, claudecfg.CursorHookRelPath)
-	hookData, err := claudecfg.ReadSettings(hookPath)
+	hookPath := filepath.Join(repoRoot, config.CursorHookRelPath)
+	hookData, err := config.ReadSettings(hookPath)
 	if err == nil {
-		claudecfg.RemoveCursorHookEntry(hookData)
-		if err := claudecfg.WriteAtomic(hookPath, hookData); err != nil {
+		config.RemoveCursorHookEntry(hookData)
+		if err := config.WriteAtomic(hookPath, hookData); err != nil {
 			return err
 		}
 	}
 
 	// Remove MCP entry from .cursor/mcp.json
-	mcpPath := filepath.Join(repoRoot, claudecfg.CursorMCPRelPath)
-	mcpData, err := claudecfg.ReadSettings(mcpPath)
+	mcpPath := filepath.Join(repoRoot, config.CursorMCPRelPath)
+	mcpData, err := config.ReadSettings(mcpPath)
 	if err == nil {
-		claudecfg.RemoveMCPEntry(mcpData)
-		if err := claudecfg.WriteAtomic(mcpPath, mcpData); err != nil {
+		config.RemoveMCPEntry(mcpData)
+		if err := config.WriteAtomic(mcpPath, mcpData); err != nil {
 			return err
 		}
 	}
 
 	// Remove permission from .cursor/cli.json
-	cliPath := filepath.Join(repoRoot, claudecfg.CursorCLIRelPath)
-	cliData, err := claudecfg.ReadSettings(cliPath)
+	cliPath := filepath.Join(repoRoot, config.CursorCLIRelPath)
+	cliData, err := config.ReadSettings(cliPath)
 	if err == nil {
-		claudecfg.RemoveCursorMCPToolPermission(cliData)
-		if err := claudecfg.WriteAtomic(cliPath, cliData); err != nil {
+		config.RemoveCursorMCPToolPermission(cliData)
+		if err := config.WriteAtomic(cliPath, cliData); err != nil {
 			return err
 		}
 	}
@@ -83,8 +83,8 @@ func (c *Cursor) Remove(repoRoot string) error {
 }
 
 func (c *Cursor) Installed(repoRoot string) bool {
-	hookPath := filepath.Join(repoRoot, claudecfg.CursorHookRelPath)
-	data, err := claudecfg.ReadSettings(hookPath)
+	hookPath := filepath.Join(repoRoot, config.CursorHookRelPath)
+	data, err := config.ReadSettings(hookPath)
 	if err != nil {
 		return false
 	}
@@ -104,5 +104,5 @@ func (c *Cursor) Installed(repoRoot string) bool {
 	if !ok {
 		return false
 	}
-	return claudecfg.HasCursorCordonHook(ptu)
+	return config.HasCursorCordonHook(ptu)
 }
