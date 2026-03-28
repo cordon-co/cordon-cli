@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -98,8 +99,8 @@ func TestHookLogEntriesSince(t *testing.T) {
 		}
 	}
 
-	// Get all entries (afterID=0).
-	entries, maxID, err := HookLogEntriesSince(db, 0)
+	// Get all entries (afterID=0, no limit).
+	entries, maxID, err := HookLogEntriesSince(db, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestHookLogEntriesSince(t *testing.T) {
 	}
 
 	// Get entries after ID 3.
-	entries, maxID, err = HookLogEntriesSince(db, 3)
+	entries, maxID, err = HookLogEntriesSince(db, 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,12 +124,48 @@ func TestHookLogEntriesSince(t *testing.T) {
 	}
 
 	// Get entries after maxID (should be empty).
-	entries, _, err = HookLogEntriesSince(db, 5)
+	entries, _, err = HookLogEntriesSince(db, 5, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries, got %d", len(entries))
+	}
+
+	// With limit: get first 2 entries only.
+	entries, maxID, err = HookLogEntriesSince(db, 0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries with limit=2, got %d", len(entries))
+	}
+	if maxID != 2 {
+		t.Errorf("expected maxID=2 with limit=2, got %d", maxID)
+	}
+
+	// Continue from that watermark to get the next batch.
+	entries, maxID, err = HookLogEntriesSince(db, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries in second batch, got %d", len(entries))
+	}
+	if maxID != 4 {
+		t.Errorf("expected maxID=4 in second batch, got %d", maxID)
+	}
+
+	// Final batch: only 1 remaining.
+	entries, maxID, err = HookLogEntriesSince(db, 4, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("expected 1 entry in final batch, got %d", len(entries))
+	}
+	if maxID != 5 {
+		t.Errorf("expected maxID=5 in final batch, got %d", maxID)
 	}
 }
 
@@ -193,5 +230,93 @@ func TestMaxServerSeq(t *testing.T) {
 	}
 	if seq != 42 {
 		t.Errorf("expected 42, got %d", seq)
+	}
+}
+
+func TestSessionsSince(t *testing.T) {
+	db := openTestDataDB(t)
+	defer db.Close()
+
+	// Insert 3 sessions with different updated_at values.
+	for i, ua := range []int64{1000, 2000, 3000} {
+		err := UpsertSession(db, Session{
+			SessionID:   fmt.Sprintf("session-%d", i+1),
+			Agent:       "claude-code",
+			Description: fmt.Sprintf("Session %d", i+1),
+			InputTokens: int64((i + 1) * 100),
+			UpdatedAt:   ua,
+			FirstSeenAt: ua,
+			LastSeenAt:  ua,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Get all sessions (afterUpdatedAt=0, no limit).
+	sessions, maxUA, err := SessionsSince(db, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 3 {
+		t.Errorf("expected 3 sessions, got %d", len(sessions))
+	}
+	if maxUA != 3000 {
+		t.Errorf("expected maxUpdatedAt=3000, got %d", maxUA)
+	}
+
+	// Get sessions after updated_at=1000.
+	sessions, maxUA, err = SessionsSince(db, 1000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 2 {
+		t.Errorf("expected 2 sessions, got %d", len(sessions))
+	}
+	if maxUA != 3000 {
+		t.Errorf("expected maxUpdatedAt=3000, got %d", maxUA)
+	}
+
+	// Get sessions after updated_at=3000 (should be empty).
+	sessions, _, err = SessionsSince(db, 3000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	}
+
+	// Re-upsert session-1 with bumped updated_at (simulates re-extraction).
+	err = UpsertSession(db, Session{
+		SessionID:   "session-1",
+		Agent:       "claude-code",
+		Description: "Session 1 (re-extracted)",
+		InputTokens: 500,
+		UpdatedAt:   4000,
+		FirstSeenAt: 1000,
+		LastSeenAt:  4000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should pick up the re-extracted session.
+	sessions, maxUA, err = SessionsSince(db, 3000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Errorf("expected 1 session, got %d", len(sessions))
+	}
+	if maxUA != 4000 {
+		t.Errorf("expected maxUpdatedAt=4000, got %d", maxUA)
+	}
+	if len(sessions) > 0 {
+		if sessions[0].InputTokens != 500 {
+			t.Errorf("expected updated InputTokens=500, got %d", sessions[0].InputTokens)
+		}
+		if sessions[0].Description != "Session 1 (re-extracted)" {
+			t.Errorf("expected updated description, got %q", sessions[0].Description)
+		}
 	}
 }

@@ -397,16 +397,32 @@ type ingestPass struct {
 	ExpiresAt  string `json:"expires_at"`
 }
 
+// ingestSession matches the spec §4.1 sessions item shape.
+type ingestSession struct {
+	SessionID       string `json:"session_id"`
+	Agent           string `json:"agent"`
+	Description     string `json:"description"`
+	TranscriptPath  string `json:"transcript_path"`
+	InputTokens     int64  `json:"input_tokens"`
+	OutputTokens    int64  `json:"output_tokens"`
+	CacheReadTokens int64  `json:"cache_read_tokens"`
+	FirstSeenAt     int64  `json:"first_seen_at"`
+	LastSeenAt      int64  `json:"last_seen_at"`
+	UpdatedAt       int64  `json:"updated_at"`
+}
+
 type ingestWatermarks struct {
-	HookLog             int64  `json:"hook_log"`
-	AuditLog            int64  `json:"audit_log"`
-	PassesLastSyncedAt  string `json:"passes_last_synced_at"`
+	HookLog            int64  `json:"hook_log"`
+	AuditLog           int64  `json:"audit_log"`
+	PassesLastSyncedAt string `json:"passes_last_synced_at"`
+	Sessions           int64  `json:"sessions"`
 }
 
 type ingestRequest struct {
 	HookLog    []ingestHookLogEntry `json:"hook_log"`
 	AuditLog   []ingestAuditEntry   `json:"audit_log"`
 	Passes     []ingestPass         `json:"passes"`
+	Sessions   []ingestSession      `json:"sessions"`
 	Watermarks ingestWatermarks     `json:"watermarks"`
 }
 
@@ -415,6 +431,7 @@ type ingestResponse struct {
 		HookLog  int `json:"hook_log"`
 		AuditLog int `json:"audit_log"`
 		Passes   int `json:"passes"`
+		Sessions int `json:"sessions"`
 	} `json:"accepted"`
 	ChainStatus struct {
 		HookLog  string `json:"hook_log"`
@@ -423,134 +440,187 @@ type ingestResponse struct {
 	NotificationsTriggered int `json:"notifications_triggered"`
 }
 
-// syncDataPush pushes hook_log, audit_log, and passes since the last watermarks.
+// ingestBatchSize is the maximum number of entries per table per ingest POST.
+// If any table has more entries than this, multiple POSTs are made with
+// watermarks advancing between each batch.
+const ingestBatchSize = 1000
+
+// syncDataPush pushes hook_log, audit_log, passes, and sessions since the last watermarks.
+// Data is sent in batches of up to ingestBatchSize entries per table per request.
+// The loop continues until all tables are fully drained.
 func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID string) (int, error) {
-	hookWM, err := store.GetWatermark(dataDB, "hook_log")
-	if err != nil {
-		return 0, err
-	}
-	auditWM, err := store.GetWatermark(dataDB, "audit_log")
-	if err != nil {
-		return 0, err
-	}
-	passesWM, err := store.GetWatermark(dataDB, "passes")
-	if err != nil {
-		return 0, err
-	}
+	totalPushed := 0
 
-	hookEntries, hookMax, err := store.HookLogEntriesSince(dataDB, hookWM)
-	if err != nil {
-		return 0, err
-	}
-	auditEntries, auditMax, err := store.AuditEntriesSince(dataDB, auditWM)
-	if err != nil {
-		return 0, err
-	}
-	passes, passMax, err := store.PassesSince(dataDB, passesWM)
-	if err != nil {
-		return 0, err
-	}
-
-	total := len(hookEntries) + len(auditEntries) + len(passes)
-	if total == 0 {
-		return 0, nil
-	}
-
-	// Convert to spec-shaped structs.
-	hookItems := make([]ingestHookLogEntry, len(hookEntries))
-	for i, e := range hookEntries {
-		hookItems[i] = ingestHookLogEntry{
-			ID:             e.ID,
-			Ts:             e.Ts,
-			ToolName:       e.ToolName,
-			FilePath:       e.FilePath,
-			ToolInput:      e.ToolInput,
-			Decision:       e.Decision,
-			OSUser:         e.OSUser,
-			Agent:          e.Agent,
-			PassID:         e.PassID,
-			Notify:         e.Notify,
-			SessionID:      e.SessionID,
-			TranscriptPath: e.TranscriptPath,
-			ParentHash:     e.ParentHash,
-			Hash:           e.Hash,
+	for {
+		hookWM, err := store.GetWatermark(dataDB, "hook_log")
+		if err != nil {
+			return totalPushed, err
 		}
-	}
-
-	auditItems := make([]ingestAuditEntry, len(auditEntries))
-	for i, e := range auditEntries {
-		auditItems[i] = ingestAuditEntry{
-			ID:         e.ID,
-			EventType:  e.EventType,
-			FilePath:   e.FilePath,
-			User:       e.User,
-			Detail:     e.Detail,
-			Timestamp:  e.Timestamp,
-			ParentHash: e.ParentHash,
-			Hash:       e.Hash,
+		auditWM, err := store.GetWatermark(dataDB, "audit_log")
+		if err != nil {
+			return totalPushed, err
 		}
-	}
-
-	passItems := make([]ingestPass, len(passes))
-	for i, p := range passes {
-		passItems[i] = ingestPass{
-			ID:         p.ID,
-			FileRuleID: p.FileRuleID,
-			Pattern:    p.Pattern,
-			Status:     p.Status,
-			IssuedTo:   p.IssuedTo,
-			IssuedBy:   p.IssuedBy,
-			IssuedAt:   p.IssuedAt,
-			ExpiresAt:  p.ExpiresAt,
+		passesWM, err := store.GetWatermark(dataDB, "passes")
+		if err != nil {
+			return totalPushed, err
 		}
-	}
+		sessionsWM, err := store.GetWatermark(dataDB, "sessions")
+		if err != nil {
+			return totalPushed, err
+		}
 
-	// Watermarks: the new high-water marks after this push.
-	// For passes, we use the current time as the sync timestamp.
-	newHookWM := hookWM
-	if hookMax > 0 {
-		newHookWM = hookMax
-	}
-	newAuditWM := auditWM
-	if auditMax > 0 {
-		newAuditWM = auditMax
-	}
+		hookEntries, hookMax, err := store.HookLogEntriesSince(dataDB, hookWM, ingestBatchSize)
+		if err != nil {
+			return totalPushed, err
+		}
+		auditEntries, auditMax, err := store.AuditEntriesSince(dataDB, auditWM, ingestBatchSize)
+		if err != nil {
+			return totalPushed, err
+		}
+		passes, passMax, err := store.PassesSince(dataDB, passesWM, ingestBatchSize)
+		if err != nil {
+			return totalPushed, err
+		}
+		sessions, sessionsMax, err := store.SessionsSince(dataDB, sessionsWM, ingestBatchSize)
+		if err != nil {
+			return totalPushed, err
+		}
 
-	var resp ingestResponse
-	_, err = client.PostJSON(
-		fmt.Sprintf("/api/v1/perimeters/%s/data/ingest", perimeterID),
-		ingestRequest{
-			HookLog:  hookItems,
-			AuditLog: auditItems,
-			Passes:   passItems,
-			Watermarks: ingestWatermarks{
-				HookLog:            newHookWM,
-				AuditLog:           newAuditWM,
-				PassesLastSyncedAt: time.Now().UTC().Format(time.RFC3339),
+		batchTotal := len(hookEntries) + len(auditEntries) + len(passes) + len(sessions)
+		if batchTotal == 0 {
+			break
+		}
+
+		// Convert to spec-shaped structs.
+		hookItems := make([]ingestHookLogEntry, len(hookEntries))
+		for i, e := range hookEntries {
+			hookItems[i] = ingestHookLogEntry{
+				ID:             e.ID,
+				Ts:             e.Ts,
+				ToolName:       e.ToolName,
+				FilePath:       e.FilePath,
+				ToolInput:      e.ToolInput,
+				Decision:       e.Decision,
+				OSUser:         e.OSUser,
+				Agent:          e.Agent,
+				PassID:         e.PassID,
+				Notify:         e.Notify,
+				SessionID:      e.SessionID,
+				TranscriptPath: e.TranscriptPath,
+				ParentHash:     e.ParentHash,
+				Hash:           e.Hash,
+			}
+		}
+
+		auditItems := make([]ingestAuditEntry, len(auditEntries))
+		for i, e := range auditEntries {
+			auditItems[i] = ingestAuditEntry{
+				ID:         e.ID,
+				EventType:  e.EventType,
+				FilePath:   e.FilePath,
+				User:       e.User,
+				Detail:     e.Detail,
+				Timestamp:  e.Timestamp,
+				ParentHash: e.ParentHash,
+				Hash:       e.Hash,
+			}
+		}
+
+		passItems := make([]ingestPass, len(passes))
+		for i, p := range passes {
+			passItems[i] = ingestPass{
+				ID:         p.ID,
+				FileRuleID: p.FileRuleID,
+				Pattern:    p.Pattern,
+				Status:     p.Status,
+				IssuedTo:   p.IssuedTo,
+				IssuedBy:   p.IssuedBy,
+				IssuedAt:   p.IssuedAt,
+				ExpiresAt:  p.ExpiresAt,
+			}
+		}
+
+		sessionItems := make([]ingestSession, len(sessions))
+		for i, s := range sessions {
+			sessionItems[i] = ingestSession{
+				SessionID:       s.SessionID,
+				Agent:           s.Agent,
+				Description:     s.Description,
+				TranscriptPath:  s.TranscriptPath,
+				InputTokens:     s.InputTokens,
+				OutputTokens:    s.OutputTokens,
+				CacheReadTokens: s.CacheReadTokens,
+				FirstSeenAt:     s.FirstSeenAt,
+				LastSeenAt:      s.LastSeenAt,
+				UpdatedAt:       s.UpdatedAt,
+			}
+		}
+
+		// Watermarks: the new high-water marks for this batch.
+		newHookWM := hookWM
+		if hookMax > 0 {
+			newHookWM = hookMax
+		}
+		newAuditWM := auditWM
+		if auditMax > 0 {
+			newAuditWM = auditMax
+		}
+		newSessionsWM := sessionsWM
+		if sessionsMax > 0 {
+			newSessionsWM = sessionsMax
+		}
+
+		var resp ingestResponse
+		_, err = client.PostJSON(
+			fmt.Sprintf("/api/v1/perimeters/%s/data/ingest", perimeterID),
+			ingestRequest{
+				HookLog:  hookItems,
+				AuditLog: auditItems,
+				Passes:   passItems,
+				Sessions: sessionItems,
+				Watermarks: ingestWatermarks{
+					HookLog:            newHookWM,
+					AuditLog:           newAuditWM,
+					PassesLastSyncedAt: time.Now().UTC().Format(time.RFC3339),
+					Sessions:           newSessionsWM,
+				},
 			},
-		},
-		&resp,
-	)
-	if err != nil {
-		return 0, err
+			&resp,
+		)
+		if err != nil {
+			return totalPushed, err
+		}
+
+		// Update local watermarks on success.
+		if len(hookEntries) > 0 {
+			if err := store.SetWatermark(dataDB, "hook_log", hookMax); err != nil {
+				return totalPushed, err
+			}
+		}
+		if len(auditEntries) > 0 {
+			if err := store.SetWatermark(dataDB, "audit_log", auditMax); err != nil {
+				return totalPushed, err
+			}
+		}
+		if len(passes) > 0 {
+			if err := store.SetWatermark(dataDB, "passes", passMax); err != nil {
+				return totalPushed, err
+			}
+		}
+		if len(sessions) > 0 {
+			if err := store.SetWatermark(dataDB, "sessions", sessionsMax); err != nil {
+				return totalPushed, err
+			}
+		}
+
+		totalPushed += batchTotal
+
+		// If no table hit the batch limit, all data has been drained.
+		if len(hookEntries) < ingestBatchSize && len(auditEntries) < ingestBatchSize &&
+			len(passes) < ingestBatchSize && len(sessions) < ingestBatchSize {
+			break
+		}
 	}
 
-	// Update local watermarks on success.
-	if len(hookEntries) > 0 {
-		if err := store.SetWatermark(dataDB, "hook_log", hookMax); err != nil {
-			return total, err
-		}
-	}
-	if len(auditEntries) > 0 {
-		if err := store.SetWatermark(dataDB, "audit_log", auditMax); err != nil {
-			return total, err
-		}
-	}
-	if len(passes) > 0 {
-		if err := store.SetWatermark(dataDB, "passes", passMax); err != nil {
-			return total, err
-		}
-	}
-
-	return total, nil
+	return totalPushed, nil
 }

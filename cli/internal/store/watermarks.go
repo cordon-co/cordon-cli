@@ -46,11 +46,18 @@ func MaxServerSeq(db *sql.DB) (int64, error) {
 }
 
 // HookLogEntriesSince returns hook_log rows with id > afterID, ordered by id ASC.
-func HookLogEntriesSince(db *sql.DB, afterID int64) ([]HookLogEntry, int64, error) {
-	rows, err := db.Query(
-		`SELECT id, ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id, notify, session_id, transcript_path, parent_hash, hash
-		 FROM hook_log WHERE id > ? ORDER BY id ASC`, afterID,
-	)
+// Pass limit <= 0 to return all matching rows.
+func HookLogEntriesSince(db *sql.DB, afterID int64, limit int) ([]HookLogEntry, int64, error) {
+	q := `SELECT id, ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id, notify, session_id, transcript_path, parent_hash, hash
+		 FROM hook_log WHERE id > ? ORDER BY id ASC`
+	var args []any
+	args = append(args, afterID)
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: hook_log since %d: %w", afterID, err)
 	}
@@ -75,11 +82,18 @@ func HookLogEntriesSince(db *sql.DB, afterID int64) ([]HookLogEntry, int64, erro
 }
 
 // AuditEntriesSince returns audit_log rows with id > afterID, ordered by id ASC.
-func AuditEntriesSince(db *sql.DB, afterID int64) ([]AuditEntry, int64, error) {
-	rows, err := db.Query(
-		`SELECT id, event_type, tool_name, file_path, file_rule_id, pass_id, user, agent, detail, timestamp, parent_hash, hash
-		 FROM audit_log WHERE id > ? ORDER BY id ASC`, afterID,
-	)
+// Pass limit <= 0 to return all matching rows.
+func AuditEntriesSince(db *sql.DB, afterID int64, limit int) ([]AuditEntry, int64, error) {
+	q := `SELECT id, event_type, tool_name, file_path, file_rule_id, pass_id, user, agent, detail, timestamp, parent_hash, hash
+		 FROM audit_log WHERE id > ? ORDER BY id ASC`
+	var args []any
+	args = append(args, afterID)
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: audit_log since %d: %w", afterID, err)
 	}
@@ -102,12 +116,19 @@ func AuditEntriesSince(db *sql.DB, afterID int64) ([]AuditEntry, int64, error) {
 }
 
 // PassesSince returns passes rows with rowid > afterID, ordered by rowid ASC.
-func PassesSince(db *sql.DB, afterID int64) ([]Pass, int64, error) {
-	rows, err := db.Query(
-		`SELECT rowid, id, file_rule_id, pattern, file_path, issued_to, issued_by, status,
+// Pass limit <= 0 to return all matching rows.
+func PassesSince(db *sql.DB, afterID int64, limit int) ([]Pass, int64, error) {
+	q := `SELECT rowid, id, file_rule_id, pattern, file_path, issued_to, issued_by, status,
 		        duration_minutes, issued_at, expires_at, revoked_at, revoked_by
-		 FROM passes WHERE rowid > ? ORDER BY rowid ASC`, afterID,
-	)
+		 FROM passes WHERE rowid > ? ORDER BY rowid ASC`
+	var args []any
+	args = append(args, afterID)
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: passes since %d: %w", afterID, err)
 	}
@@ -129,4 +150,43 @@ func PassesSince(db *sql.DB, afterID int64) ([]Pass, int64, error) {
 		}
 	}
 	return passes, maxID, rows.Err()
+}
+
+// SessionsSince returns sessions with updated_at > afterUpdatedAt, ordered by updated_at ASC.
+// The watermark is updated_at (Unix microseconds) rather than an autoincrement ID,
+// so both new sessions and re-extracted sessions (with bumped updated_at) are captured.
+// Pass limit <= 0 to return all matching rows.
+func SessionsSince(db *sql.DB, afterUpdatedAt int64, limit int) ([]Session, int64, error) {
+	q := `SELECT session_id, agent, description, transcript_path,
+		        input_tokens, output_tokens, cache_read_tokens,
+		        first_seen_at, last_seen_at, updated_at
+		 FROM sessions WHERE updated_at > ? ORDER BY updated_at ASC`
+	var args []any
+	args = append(args, afterUpdatedAt)
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: sessions since %d: %w", afterUpdatedAt, err)
+	}
+	defer rows.Close()
+
+	var sessions []Session
+	var maxUpdatedAt int64
+	for rows.Next() {
+		var s Session
+		if err := rows.Scan(&s.SessionID, &s.Agent, &s.Description, &s.TranscriptPath,
+			&s.InputTokens, &s.OutputTokens, &s.CacheReadTokens,
+			&s.FirstSeenAt, &s.LastSeenAt, &s.UpdatedAt); err != nil {
+			return nil, 0, fmt.Errorf("store: scan session: %w", err)
+		}
+		sessions = append(sessions, s)
+		if s.UpdatedAt > maxUpdatedAt {
+			maxUpdatedAt = s.UpdatedAt
+		}
+	}
+	return sessions, maxUpdatedAt, rows.Err()
 }
