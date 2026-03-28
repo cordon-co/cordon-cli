@@ -357,18 +357,20 @@ func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events
 
 // ingestHookLogEntry matches the spec §4.1 hook_log item shape (includes id).
 type ingestHookLogEntry struct {
-	ID         int64  `json:"id"`
-	Ts         int64  `json:"ts"`
-	ToolName   string `json:"tool_name"`
-	FilePath   string `json:"file_path"`
-	ToolInput  string `json:"tool_input"`
-	Decision   string `json:"decision"`
-	OSUser     string `json:"os_user"`
-	Agent      string `json:"agent"`
-	PassID     string `json:"pass_id"`
-	Notify     bool   `json:"notify"`
-	ParentHash string `json:"parent_hash"`
-	Hash       string `json:"hash"`
+	ID             int64  `json:"id"`
+	Ts             int64  `json:"ts"`
+	ToolName       string `json:"tool_name"`
+	FilePath       string `json:"file_path"`
+	ToolInput      string `json:"tool_input"`
+	Decision       string `json:"decision"`
+	OSUser         string `json:"os_user"`
+	Agent          string `json:"agent"`
+	PassID         string `json:"pass_id"`
+	Notify         bool   `json:"notify"`
+	SessionID      string `json:"session_id"`
+	TranscriptPath string `json:"transcript_path"`
+	ParentHash     string `json:"parent_hash"`
+	Hash           string `json:"hash"`
 }
 
 // ingestAuditEntry matches the spec §4.1 audit_log item shape (includes id).
@@ -458,18 +460,20 @@ func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID string) (int, 
 	hookItems := make([]ingestHookLogEntry, len(hookEntries))
 	for i, e := range hookEntries {
 		hookItems[i] = ingestHookLogEntry{
-			ID:         e.ID,
-			Ts:         e.Ts,
-			ToolName:   e.ToolName,
-			FilePath:   e.FilePath,
-			ToolInput:  e.ToolInput,
-			Decision:   e.Decision,
-			OSUser:     e.OSUser,
-			Agent:      e.Agent,
-			PassID:     e.PassID,
-			Notify:     e.Notify,
-			ParentHash: e.ParentHash,
-			Hash:       e.Hash,
+			ID:             e.ID,
+			Ts:             e.Ts,
+			ToolName:       e.ToolName,
+			FilePath:       e.FilePath,
+			ToolInput:      e.ToolInput,
+			Decision:       e.Decision,
+			OSUser:         e.OSUser,
+			Agent:          e.Agent,
+			PassID:         e.PassID,
+			Notify:         e.Notify,
+			SessionID:      e.SessionID,
+			TranscriptPath: e.TranscriptPath,
+			ParentHash:     e.ParentHash,
+			Hash:           e.Hash,
 		}
 	}
 

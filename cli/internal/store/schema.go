@@ -226,11 +226,19 @@ func MigrateDataDB(db *sql.DB) error {
 		`ALTER TABLE hook_log ADD COLUMN hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE audit_log ADD COLUMN parent_hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE audit_log ADD COLUMN hash TEXT NOT NULL DEFAULT ''`,
+		// Session tracking columns for transcript extraction.
+		`ALTER TABLE hook_log ADD COLUMN session_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN transcript_path TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alterStmts {
 		if _, err := db.Exec(stmt); err != nil && !isDuplicateColumn(err) {
 			return err
 		}
+	}
+
+	// Additional indexes for migrated columns.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS hook_log_session_id ON hook_log(session_id)`); err != nil {
+		return err
 	}
 
 	return nil

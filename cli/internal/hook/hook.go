@@ -43,13 +43,15 @@ type PolicyChecker func(filePath, cwd string) (allowed bool, passID string, noti
 // Event is returned by Evaluate for every tool invocation (writing or not).
 // It carries all fields needed for audit logging.
 type Event struct {
-	ToolName  string
-	FilePath  string          // may be empty for tools with no file path (e.g. Bash)
-	ToolInput json.RawMessage // full raw tool_input JSON from the hook payload
-	Decision  Decision
-	PassID    string // non-empty if write was allowed via an active pass
-	Cwd       string // cwd from the hook payload; used by the logger for DB path discovery
-	Notify    bool   // rule had notification flags — triggers immediate background sync
+	ToolName       string
+	FilePath       string          // may be empty for tools with no file path (e.g. Bash)
+	ToolInput      json.RawMessage // full raw tool_input JSON from the hook payload
+	Decision       Decision
+	PassID         string // non-empty if write was allowed via an active pass
+	Cwd            string // cwd from the hook payload; used by the logger for DB path discovery
+	Notify         bool   // rule had notification flags — triggers immediate background sync
+	SessionID      string // agent session identifier
+	TranscriptPath string // path to session transcript (or conversation_id for Cursor)
 }
 
 // ReadChecker checks whether a read of filePath from a prevent-read file rule
@@ -124,13 +126,14 @@ var copilotTools = map[string]bool{
 	"read_file":       true,
 }
 
-// hookPayload is the JSON structure sent by Claude Code via stdin.
-// Claude Code also sends session_id, transcript_path, hook_event_name, etc.;
-// those fields are ignored here (unknown fields are discarded by encoding/json).
+// hookPayload is the JSON structure sent by agents via stdin.
 type hookPayload struct {
-	ToolName  string          `json:"tool_name"`
-	ToolInput json.RawMessage `json:"tool_input"`
-	Cwd       string          `json:"cwd"` // agent working directory; equals repo root
+	ToolName       string          `json:"tool_name"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+	Cwd            string          `json:"cwd"`             // agent working directory; equals repo root
+	SessionID      string          `json:"session_id"`      // agent session identifier
+	TranscriptPath string          `json:"transcript_path"` // path to session transcript
+	ConversationID string          `json:"conversation_id"` // Cursor uses this instead of transcript_path
 }
 
 // toolInputPath extracts the file path from a tool's input JSON.
@@ -142,6 +145,12 @@ type toolInputPath struct {
 	Filename     string `json:"filename"`    // VS Code Copilot (create_file, etc.)
 	Destination  string `json:"destination"` // VS Code Copilot (moveFile, renameFile)
 	NewPath      string `json:"newPath"`     // VS Code Copilot (renameFile variant)
+}
+
+// setSession stamps the session tracking fields from the payload onto the event.
+func (p hookPayload) setSession(e *Event) {
+	e.SessionID = p.SessionID
+	e.TranscriptPath = p.TranscriptPath
 }
 
 func (t toolInputPath) effectivePath() string {
@@ -195,14 +204,29 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		return nil, fmt.Errorf("hook: parse payload: %w", err)
 	}
 
+	// Cursor sends conversation_id (a UUID) as its session identifier
+	// instead of session_id. Normalise it so downstream code only deals
+	// with two canonical fields.
+	if payload.SessionID == "" && payload.ConversationID != "" {
+		payload.SessionID = payload.ConversationID
+	}
+
 	// Bash tool: check whether the command targets any files via shell write patterns.
 	if payload.ToolName == "Bash" || payload.ToolName == "bash" {
-		return evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker)
+		event, err := evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker)
+		if event != nil {
+			payload.setSession(event)
+		}
+		return event, err
 	}
 
 	// apply_patch: file paths are embedded in the patch body, potentially multiple.
 	if payload.ToolName == "apply_patch" {
-		return evaluateApplyPatch(payload, w, errW, checker)
+		event, err := evaluateApplyPatch(payload, w, errW, checker)
+		if event != nil {
+			payload.setSession(event)
+		}
+		return event, err
 	}
 
 	// Extract the file path; tolerate missing/non-path tools gracefully.
@@ -218,12 +242,14 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		allowed, readPassID, notify := checkRead(rdChecker, filePath, payload.Cwd)
 		if !allowed {
 			event := &Event{
-				ToolName:  payload.ToolName,
-				FilePath:  filePath,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
-				Notify:    notify,
+				ToolName:       payload.ToolName,
+				FilePath:       filePath,
+				ToolInput:      payload.ToolInput,
+				Decision:       DecisionDeny,
+				Cwd:            payload.Cwd,
+				Notify:         notify,
+				SessionID:      payload.SessionID,
+				TranscriptPath: payload.TranscriptPath,
 			}
 			if err := writeDeny(w, errW, payload.ToolName, filePath); err != nil {
 				return nil, err
@@ -231,24 +257,28 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 			return event, ErrDenied
 		}
 		return &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  filePath,
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionAllow,
-			PassID:    readPassID,
-			Cwd:       payload.Cwd,
-			Notify:    notify,
+			ToolName:       payload.ToolName,
+			FilePath:       filePath,
+			ToolInput:      payload.ToolInput,
+			Decision:       DecisionAllow,
+			PassID:         readPassID,
+			Cwd:            payload.Cwd,
+			Notify:         notify,
+			SessionID:      payload.SessionID,
+			TranscriptPath: payload.TranscriptPath,
 		}, nil
 	}
 
 	// Non-writing tools: allow and log; no deny response.
 	if !writingTools[payload.ToolName] {
 		return &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  filePath,
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionAllow,
-			Cwd:       payload.Cwd,
+			ToolName:       payload.ToolName,
+			FilePath:       filePath,
+			ToolInput:      payload.ToolInput,
+			Decision:       DecisionAllow,
+			Cwd:            payload.Cwd,
+			SessionID:      payload.SessionID,
+			TranscriptPath: payload.TranscriptPath,
 		}, nil
 	}
 
@@ -257,23 +287,27 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 
 	if allowed {
 		return &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  filePath,
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionAllow,
-			PassID:    passID,
-			Cwd:       payload.Cwd,
-			Notify:    notify,
+			ToolName:       payload.ToolName,
+			FilePath:       filePath,
+			ToolInput:      payload.ToolInput,
+			Decision:       DecisionAllow,
+			PassID:         passID,
+			Cwd:            payload.Cwd,
+			Notify:         notify,
+			SessionID:      payload.SessionID,
+			TranscriptPath: payload.TranscriptPath,
 		}, nil
 	}
 
 	event := &Event{
-		ToolName:  payload.ToolName,
-		FilePath:  filePath,
-		ToolInput: payload.ToolInput,
-		Decision:  DecisionDeny,
-		Cwd:       payload.Cwd,
-		Notify:    notify,
+		ToolName:       payload.ToolName,
+		FilePath:       filePath,
+		ToolInput:      payload.ToolInput,
+		Decision:       DecisionDeny,
+		Cwd:            payload.Cwd,
+		Notify:         notify,
+		SessionID:      payload.SessionID,
+		TranscriptPath: payload.TranscriptPath,
 	}
 	if err := writeDeny(w, errW, payload.ToolName, filePath); err != nil {
 		return nil, err

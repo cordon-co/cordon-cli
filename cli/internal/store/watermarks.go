@@ -48,7 +48,7 @@ func MaxServerSeq(db *sql.DB) (int64, error) {
 // HookLogEntriesSince returns hook_log rows with id > afterID, ordered by id ASC.
 func HookLogEntriesSince(db *sql.DB, afterID int64) ([]HookLogEntry, int64, error) {
 	rows, err := db.Query(
-		`SELECT id, ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id, notify, parent_hash, hash
+		`SELECT id, ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id, notify, session_id, transcript_path, parent_hash, hash
 		 FROM hook_log WHERE id > ? ORDER BY id ASC`, afterID,
 	)
 	if err != nil {
@@ -62,7 +62,7 @@ func HookLogEntriesSince(db *sql.DB, afterID int64) ([]HookLogEntry, int64, erro
 		var e HookLogEntry
 		var notify int
 		if err := rows.Scan(&e.ID, &e.Ts, &e.ToolName, &e.FilePath, &e.ToolInput,
-			&e.Decision, &e.OSUser, &e.Agent, &e.PassID, &notify, &e.ParentHash, &e.Hash); err != nil {
+			&e.Decision, &e.OSUser, &e.Agent, &e.PassID, &notify, &e.SessionID, &e.TranscriptPath, &e.ParentHash, &e.Hash); err != nil {
 			return nil, 0, fmt.Errorf("store: scan hook_log entry: %w", err)
 		}
 		e.Notify = notify != 0

@@ -16,9 +16,11 @@ type HookLogEntry struct {
 	Decision   string // "allow" or "deny"
 	OSUser     string
 	Agent      string
-	PassID     string
-	Notify     bool   // rule had notification flags
-	ParentHash string // hash of previous hook_log entry
+	PassID         string
+	Notify         bool   // rule had notification flags
+	SessionID      string // agent session identifier
+	TranscriptPath string // path to session transcript (or conversation_id for Cursor)
+	ParentHash     string // hash of previous hook_log entry
 	Hash       string // SHA-256 hash for tamper evidence
 }
 
@@ -45,10 +47,10 @@ func InsertHookLog(db *sql.DB, e HookLogEntry) error {
 	}
 
 	_, err = db.Exec(
-		`INSERT INTO hook_log (ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id, notify, parent_hash, hash)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO hook_log (ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id, notify, session_id, transcript_path, parent_hash, hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.Ts, e.ToolName, e.FilePath, e.ToolInput, e.Decision, e.OSUser, e.Agent, e.PassID,
-		notify, e.ParentHash, e.Hash,
+		notify, e.SessionID, e.TranscriptPath, e.ParentHash, e.Hash,
 	)
 	return err
 }

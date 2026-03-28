@@ -50,6 +50,7 @@ type UnifiedEntry struct {
 	User       string    `json:"user,omitempty"`
 	Agent      string    `json:"agent,omitempty"`
 	Detail     string    `json:"detail,omitempty"`
+	SessionID  string    `json:"session_id,omitempty"`
 }
 
 // ListUnifiedLog queries hook_log and audit_log from the data database, merges
@@ -82,7 +83,7 @@ func ListUnifiedLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 }
 
 func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
-	q := `SELECT ts, tool_name, file_path, decision, os_user, agent, pass_id FROM hook_log WHERE 1=1`
+	q := `SELECT ts, tool_name, file_path, decision, os_user, agent, pass_id, session_id FROM hook_log WHERE 1=1`
 	var args []any
 
 	if f.File != "" {
@@ -128,8 +129,8 @@ func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 	var result []UnifiedEntry
 	for rows.Next() {
 		var ts int64
-		var toolName, filePath, decision, osUser, agent, passID string
-		if err := rows.Scan(&ts, &toolName, &filePath, &decision, &osUser, &agent, &passID); err != nil {
+		var toolName, filePath, decision, osUser, agent, passID, sessionID string
+		if err := rows.Scan(&ts, &toolName, &filePath, &decision, &osUser, &agent, &passID, &sessionID); err != nil {
 			return nil, fmt.Errorf("store: scan hook_log: %w", err)
 		}
 		eventType := "hook_allow"
@@ -144,6 +145,7 @@ func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 			User:      osUser,
 			Agent:     agent,
 			PassID:    passID,
+			SessionID: sessionID,
 		})
 	}
 	return result, rows.Err()

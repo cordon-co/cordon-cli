@@ -232,15 +232,17 @@ func logHookEvent(event *hook.Event) {
 	}
 
 	entry := store.HookLogEntry{
-		Ts:        time.Now().UnixMicro(),
-		ToolName:  event.ToolName,
-		FilePath:  event.FilePath,
-		ToolInput: string(event.ToolInput),
-		Decision:  string(event.Decision),
-		OSUser:    store.CurrentOSUser(),
-		Agent:     hookAgent,
-		PassID:    event.PassID,
-		Notify:    event.Notify,
+		Ts:             time.Now().UnixMicro(),
+		ToolName:       event.ToolName,
+		FilePath:       event.FilePath,
+		ToolInput:      string(event.ToolInput),
+		Decision:       string(event.Decision),
+		OSUser:         store.CurrentOSUser(),
+		Agent:          hookAgent,
+		PassID:         event.PassID,
+		Notify:         event.Notify,
+		SessionID:      event.SessionID,
+		TranscriptPath: event.TranscriptPath,
 	}
 
 	if err := store.InsertHookLog(db, entry); err != nil {
