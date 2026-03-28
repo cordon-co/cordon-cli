@@ -65,6 +65,7 @@ func init() {
 		file.Cmd,
 		pass.Cmd,
 		command.Cmd,
+		sessionsCmd,
 	)
 }
 

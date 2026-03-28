@@ -50,6 +50,7 @@ type Event struct {
 	PassID         string // non-empty if write was allowed via an active pass
 	Cwd            string // cwd from the hook payload; used by the logger for DB path discovery
 	Notify         bool   // rule had notification flags — triggers immediate background sync
+	Agent          string // detected agent platform (see inferAgent)
 	SessionID      string // agent session identifier
 	TranscriptPath string // path to session transcript (or conversation_id for Cursor)
 }
@@ -147,10 +148,30 @@ type toolInputPath struct {
 	NewPath      string `json:"newPath"`     // VS Code Copilot (renameFile variant)
 }
 
-// setSession stamps the session tracking fields from the payload onto the event.
+// setSession stamps the session tracking and agent fields from the payload onto the event.
 func (p hookPayload) setSession(e *Event) {
+	e.Agent = p.inferAgent()
 	e.SessionID = p.SessionID
 	e.TranscriptPath = p.TranscriptPath
+}
+
+// inferAgent determines the agent platform from the hook payload.
+//
+// Cursor and Claude Code both load .claude/settings.local.json hooks, so
+// the hook command is intentionally the same ("cordon hook" with no --agent
+// flag) to let Cursor deduplicate into a single invocation. Instead of
+// relying on the flag, we distinguish agents by payload shape:
+//   - Cursor sends conversation_id (normalised to SessionID above)
+//     but never sends transcript_path.
+//   - Claude Code sends session_id and transcript_path.
+//
+// For agents that do pass --agent (Codex, Gemini, VS Copilot, OpenCode),
+// cmd/hook.go will override this value with the flag.
+func (p hookPayload) inferAgent() string {
+	if p.ConversationID != "" {
+		return "cursor"
+	}
+	return "claude-code"
 }
 
 func (t toolInputPath) effectivePath() string {
@@ -237,6 +258,8 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 	}
 	filePath := inp.effectivePath()
 
+	agent := payload.inferAgent()
+
 	// Reading tools: check against prevent-read file rules.
 	if readingTools[payload.ToolName] {
 		allowed, readPassID, notify := checkRead(rdChecker, filePath, payload.Cwd)
@@ -248,6 +271,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 				Decision:       DecisionDeny,
 				Cwd:            payload.Cwd,
 				Notify:         notify,
+				Agent:          agent,
 				SessionID:      payload.SessionID,
 				TranscriptPath: payload.TranscriptPath,
 			}
@@ -264,6 +288,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 			PassID:         readPassID,
 			Cwd:            payload.Cwd,
 			Notify:         notify,
+			Agent:          agent,
 			SessionID:      payload.SessionID,
 			TranscriptPath: payload.TranscriptPath,
 		}, nil
@@ -277,6 +302,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 			ToolInput:      payload.ToolInput,
 			Decision:       DecisionAllow,
 			Cwd:            payload.Cwd,
+			Agent:          agent,
 			SessionID:      payload.SessionID,
 			TranscriptPath: payload.TranscriptPath,
 		}, nil
@@ -294,6 +320,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 			PassID:         passID,
 			Cwd:            payload.Cwd,
 			Notify:         notify,
+			Agent:          agent,
 			SessionID:      payload.SessionID,
 			TranscriptPath: payload.TranscriptPath,
 		}, nil
@@ -306,6 +333,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		Decision:       DecisionDeny,
 		Cwd:            payload.Cwd,
 		Notify:         notify,
+		Agent:          agent,
 		SessionID:      payload.SessionID,
 		TranscriptPath: payload.TranscriptPath,
 	}

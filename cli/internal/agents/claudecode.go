@@ -20,7 +20,12 @@ func (c *ClaudeCode) Install(repoRoot string) error {
 	if err != nil {
 		return err
 	}
-	config.AddHookEntry(settingsData, "claude-code")
+	// Pass empty agent: Cursor reads .claude/settings.local.json hooks too,
+	// so both Claude Code and Cursor must emit the same "cordon hook" command
+	// (no --agent flag). This lets Cursor deduplicate to a single hook call.
+	// Agent identity is detected from the payload instead (conversation_id
+	// presence → Cursor, otherwise Claude Code). See hook.go:inferAgent.
+	config.AddHookEntry(settingsData, "")
 	config.AddEnabledMCPServer(settingsData)
 	config.AddMCPToolPermission(settingsData)
 	config.RemoveMCPEntry(settingsData) // clean up any legacy MCP entry

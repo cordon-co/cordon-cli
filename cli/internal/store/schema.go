@@ -193,6 +193,22 @@ func MigrateDataDB(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_audit_timestamp  ON audit_log(timestamp)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_event_type ON audit_log(event_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_file_path  ON audit_log(file_path)`,
+
+		// sessions — per-session metadata and aggregated token usage,
+		// populated by background transcript extraction.
+		`CREATE TABLE IF NOT EXISTS sessions (
+			session_id          TEXT PRIMARY KEY,
+			agent               TEXT NOT NULL DEFAULT '',
+			description         TEXT NOT NULL DEFAULT '',
+			transcript_path     TEXT NOT NULL DEFAULT '',
+			input_tokens        INTEGER NOT NULL DEFAULT 0,
+			output_tokens       INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens   INTEGER NOT NULL DEFAULT 0,
+			first_seen_at       INTEGER NOT NULL DEFAULT 0,
+			last_seen_at        INTEGER NOT NULL DEFAULT 0,
+			updated_at          INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS sessions_last_seen ON sessions(last_seen_at)`,
 	}
 
 	for _, stmt := range stmts {

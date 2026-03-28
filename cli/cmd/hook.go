@@ -47,11 +47,18 @@ var hookCmd = &cobra.Command{
 			// Trigger background sync for authenticated users.
 			// This is cheap: IsLoggedIn() is a file stat, SyncDue() is a file stat,
 			// SpawnBackgroundSync() is a fork+exec that returns immediately.
-			if api.IsLoggedIn() {
-				if absRoot, rootErr := resolveRepoRoot(event.Cwd); rootErr == nil {
+			if absRoot, rootErr := resolveRepoRoot(event.Cwd); rootErr == nil {
+				// Trigger background sync for authenticated users.
+				if api.IsLoggedIn() {
 					if event.Notify || cordsync.SyncDue(absRoot) {
 						cordsync.SpawnBackgroundSync(absRoot)
 					}
+				}
+
+				// Trigger background transcript extraction on every hook with session
+			// data. The flock in the extract command prevents concurrent runs.
+				if event.SessionID != "" && event.TranscriptPath != "" {
+					cordsync.SpawnBackgroundExtract(absRoot)
 				}
 			}
 		}
@@ -231,6 +238,15 @@ func logHookEvent(event *hook.Event) {
 		return
 	}
 
+	// Prefer the --agent flag when explicitly set (Codex, Gemini, VS Copilot,
+	// OpenCode pass it). For Claude Code and Cursor the flag is intentionally
+	// omitted so Cursor deduplicates to a single hook call; agent identity is
+	// inferred from the payload instead (see hook.inferAgent).
+	agent := event.Agent
+	if hookAgent != "" {
+		agent = hookAgent
+	}
+
 	entry := store.HookLogEntry{
 		Ts:             time.Now().UnixMicro(),
 		ToolName:       event.ToolName,
@@ -238,7 +254,7 @@ func logHookEvent(event *hook.Event) {
 		ToolInput:      string(event.ToolInput),
 		Decision:       string(event.Decision),
 		OSUser:         store.CurrentOSUser(),
-		Agent:          hookAgent,
+		Agent:          agent,
 		PassID:         event.PassID,
 		Notify:         event.Notify,
 		SessionID:      event.SessionID,

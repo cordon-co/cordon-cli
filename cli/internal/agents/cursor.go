@@ -22,7 +22,11 @@ func (c *Cursor) Install(repoRoot string) error {
 	if err != nil {
 		return err
 	}
-	config.AddCursorHookEntry(hookData, "cursor")
+	// Pass empty agent: the hook command must be identical to Claude Code's
+	// ("cordon hook" with no --agent flag) so Cursor deduplicates them into a
+	// single hook call. Agent identity is inferred from the payload instead.
+	// See hook.go:inferAgent.
+	config.AddCursorHookEntry(hookData, "")
 	if err := config.WriteAtomic(hookPath, hookData); err != nil {
 		return err
 	}
