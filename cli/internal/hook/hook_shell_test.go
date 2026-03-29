@@ -53,6 +53,12 @@ func TestEvaluate_RunInTerminalAppliesCommandRules(t *testing.T) {
 	if event.Decision != DecisionDeny {
 		t.Fatalf("event.Decision = %q, want %q", event.Decision, DecisionDeny)
 	}
+	if event.DeniedOpReason == "" {
+		t.Fatal("event.DeniedOpReason is empty, want populated reason")
+	}
+	if event.DeniedOpReason != "prevent-command rule violation" {
+		t.Fatalf("event.DeniedOpReason = %q, want prevent-command rule violation", event.DeniedOpReason)
+	}
 }
 
 func TestEvaluate_RunInTerminalUsesCwdAwareReadChecks(t *testing.T) {

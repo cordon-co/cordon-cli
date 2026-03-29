@@ -279,6 +279,8 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 				ToolName:       payload.ToolName,
 				FilePath:       filePath,
 				ToolInput:      payload.ToolInput,
+				DeniedOpIndex:  -1,
+				DeniedOpReason: denyOpReasonForTool(payload.ToolName),
 				Decision:       DecisionDeny,
 				Cwd:            payload.Cwd,
 				Notify:         notify,
@@ -341,6 +343,8 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		ToolName:       payload.ToolName,
 		FilePath:       filePath,
 		ToolInput:      payload.ToolInput,
+		DeniedOpIndex:  -1,
+		DeniedOpReason: denyOpReasonForTool(payload.ToolName),
 		Decision:       DecisionDeny,
 		Cwd:            payload.Cwd,
 		Notify:         notify,
@@ -376,7 +380,7 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 				CommandParserVersion: analysis.ParserVersion,
 				CommandOpsJSON:       analysis.opsJSON(),
 				DeniedOpIndex:        i,
-				DeniedOpReason:       reason,
+				DeniedOpReason:       "prevent-command rule violation",
 				MatchedRulePattern:   matched.Pattern,
 				MatchedRuleType:      matched.RuleType,
 				Ambiguity:            analysis.ambiguityText(),
@@ -404,7 +408,7 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 					CommandParserVersion: analysis.ParserVersion,
 					CommandOpsJSON:       analysis.opsJSON(),
 					DeniedOpIndex:        i,
-					DeniedOpReason:       reason,
+					DeniedOpReason:       "prevent-command rule violation",
 					MatchedRulePattern:   matched.Pattern,
 					MatchedRuleType:      matched.RuleType,
 					Ambiguity:            analysis.ambiguityText(),
@@ -497,7 +501,7 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 				CommandParserVersion: analysis.ParserVersion,
 				CommandOpsJSON:       analysis.opsJSON(),
 				DeniedOpIndex:        i,
-				DeniedOpReason:       "file rule mutation violation",
+				DeniedOpReason:       "prevent-write rule violation",
 				Ambiguity:            analysis.ambiguityText(),
 				Decision:             DecisionDeny,
 				Cwd:                  payload.Cwd,
@@ -557,12 +561,14 @@ func evaluateApplyPatch(payload hookPayload, w io.Writer, errW io.Writer, checke
 		allowed, _, pNotify := checkPolicy(checker, target, payload.Cwd)
 		if !allowed {
 			event := &Event{
-				ToolName:  payload.ToolName,
-				FilePath:  target,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
-				Notify:    pNotify,
+				ToolName:       payload.ToolName,
+				FilePath:       target,
+				ToolInput:      payload.ToolInput,
+				DeniedOpIndex:  -1,
+				DeniedOpReason: denyOpReasonForTool(payload.ToolName),
+				Decision:       DecisionDeny,
+				Cwd:            payload.Cwd,
+				Notify:         pNotify,
 			}
 			if err := writeDeny(w, errW, payload.ToolName, target); err != nil {
 				return nil, err
@@ -691,12 +697,7 @@ func policyBashDenyReason(primary string, all []string) string {
 }
 
 func writeDeny(w io.Writer, errW io.Writer, toolName, path string) error {
-	var reason string
-	if readingTools[toolName] {
-		reason = readDenyReason(path)
-	} else {
-		reason = policyDenyReason(path)
-	}
+	reason := denyReasonForTool(toolName, path)
 	if err := encodeClaudeDeny(w, reason); err != nil {
 		return err
 	}
@@ -704,6 +705,20 @@ func writeDeny(w io.Writer, errW io.Writer, toolName, path string) error {
 		writeCopilotDeny(errW, reason)
 	}
 	return nil
+}
+
+func denyReasonForTool(toolName, path string) string {
+	if readingTools[toolName] {
+		return readDenyReason(path)
+	}
+	return policyDenyReason(path)
+}
+
+func denyOpReasonForTool(toolName string) string {
+	if readingTools[toolName] {
+		return "prevent-read rule violation"
+	}
+	return "prevent-write rule violation"
 }
 
 func writeBashDeny(w io.Writer, errW io.Writer, primary string, all []string) error {
