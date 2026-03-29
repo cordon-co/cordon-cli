@@ -63,8 +63,7 @@ func MigratePolicyDB(db *sql.DB) error {
 
 		// policy_events — immutable, append-only log of every policy mutation.
 		// The existing file_rules and command_rules tables are projections rebuilt
-		// from this event log. The hash chain provides tamper detection and
-		// deterministic replay for sync.
+		// from this event log for deterministic sync/replay.
 		`CREATE TABLE IF NOT EXISTS policy_events (
 			seq            INTEGER PRIMARY KEY AUTOINCREMENT,
 			event_id       TEXT    NOT NULL UNIQUE,
@@ -72,8 +71,6 @@ func MigratePolicyDB(db *sql.DB) error {
 			payload        TEXT    NOT NULL,
 			actor          TEXT    NOT NULL,
 			timestamp      TEXT    NOT NULL,
-			parent_hash    TEXT    NOT NULL DEFAULT '',
-			hash           TEXT    NOT NULL,
 			server_seq     INTEGER
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_policy_events_server_seq ON policy_events(server_seq)`,

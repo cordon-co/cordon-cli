@@ -13,6 +13,7 @@ import (
 
 	"github.com/cordon-co/cordon-cli/cli/internal/api"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
+	"github.com/cordon-co/cordon-cli/cli/internal/policysync"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
 	cordsync "github.com/cordon-co/cordon-cli/cli/internal/sync"
@@ -170,25 +171,16 @@ func doSync(absRoot string, logWriter io.Writer) (*syncResult, error) {
 	}
 
 	// Lookup perimeter on the server.
-	// Spec §2.4: response is { perimeter_id, name, role }.
-	var lookupResp struct {
-		PerimeterID string `json:"perimeter_id"`
-		Name        string `json:"name"`
-		Role        string `json:"role"`
-	}
-	_, err = client.GetJSON(fmt.Sprintf("/api/v1/perimeters/lookup?perimeter_id=%s", perimeterID), &lookupResp)
+	pid, ok, err := policysync.LookupPerimeter(client, perimeterID)
 	if err != nil {
-		if errors.Is(err, api.ErrNotFound) {
-			return nil, fmt.Errorf("this repository is not registered in your Cordon dashboard")
-		}
 		return nil, fmt.Errorf("perimeter lookup: %w", err)
 	}
-
-	// The perimeter_id is used as the path parameter for all subsequent API calls.
-	pid := lookupResp.PerimeterID
+	if !ok {
+		return nil, fmt.Errorf("this repository is not registered in your Cordon dashboard")
+	}
 
 	// --- Policy Pull ---
-	pulled, err := syncPolicyPull(policyDB, client, pid)
+	pulled, err := policysync.PullEvents(policyDB, client, pid)
 	if err != nil {
 		return nil, fmt.Errorf("policy pull: %w", err)
 	}
@@ -198,6 +190,13 @@ func doSync(absRoot string, logWriter io.Writer) (*syncResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("policy push: %w", err)
 	}
+
+	// --- Policy Pull (final reconciliation) ---
+	finalPulled, err := policysync.PullEvents(policyDB, client, pid)
+	if err != nil {
+		return nil, fmt.Errorf("policy pull after push: %w", err)
+	}
+	pulled += finalPulled
 
 	// --- Data Push ---
 	dataDB, err := store.OpenDataDB(absRoot)
@@ -223,53 +222,6 @@ func doSync(absRoot string, logWriter io.Writer) (*syncResult, error) {
 	}, nil
 }
 
-// syncPolicyPull fetches remote policy events after the local max server_seq.
-// Handles pagination via has_more (spec §3.2).
-func syncPolicyPull(policyDB *sql.DB, client *api.Client, perimeterID string) (int, error) {
-	totalPulled := 0
-	afterSeq, err := store.MaxServerSeq(policyDB)
-	if err != nil {
-		return 0, err
-	}
-
-	for {
-		var pullResp struct {
-			Events  []store.PolicyEvent `json:"events"`
-			HasMore bool                `json:"has_more"`
-		}
-		_, err = client.GetJSON(
-			fmt.Sprintf("/api/v1/perimeters/%s/policy/events?after_server_seq=%d&limit=1000", perimeterID, afterSeq),
-			&pullResp,
-		)
-		if err != nil {
-			return totalPulled, err
-		}
-
-		if len(pullResp.Events) == 0 {
-			break
-		}
-
-		if err := store.AppendRemoteEvents(policyDB, pullResp.Events); err != nil {
-			return totalPulled, err
-		}
-		totalPulled += len(pullResp.Events)
-
-		if !pullResp.HasMore {
-			break
-		}
-
-		// Advance cursor to the last received server_seq for the next page.
-		lastEvent := pullResp.Events[len(pullResp.Events)-1]
-		if lastEvent.ServerSeq != nil {
-			afterSeq = *lastEvent.ServerSeq
-		} else {
-			break // shouldn't happen — remote events always have server_seq
-		}
-	}
-
-	return totalPulled, nil
-}
-
 // syncPolicyPush sends unpushed local events to the server.
 // Handles 409 (events_behind) by pulling again and retrying once.
 func syncPolicyPush(policyDB *sql.DB, client *api.Client, perimeterID string) (int, error) {
@@ -288,13 +240,11 @@ func syncPolicyPush(policyDB *sql.DB, client *api.Client, perimeterID string) (i
 	return pushed, nil
 }
 
-// policyPushRequest matches spec §3.1.
 type policyPushRequest struct {
 	Events             []store.PolicyEvent `json:"events"`
 	LastKnownServerSeq int64               `json:"last_known_server_seq"`
 }
 
-// policyPushResponse matches spec §3.1.
 type policyPushResponse struct {
 	Accepted             int              `json:"accepted"`
 	ServerSeqAssignments map[string]int64 `json:"server_seq_assignments"`
@@ -316,10 +266,9 @@ func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events
 		var apiErr *api.APIError
 		if errors.As(err, &apiErr) && apiErr.Code == "events_behind" {
 			// Pull first, then retry.
-			if _, pullErr := syncPolicyPull(policyDB, client, perimeterID); pullErr != nil {
+			if _, pullErr := policysync.PullEvents(policyDB, client, perimeterID); pullErr != nil {
 				return 0, fmt.Errorf("pull before retry: %w", pullErr)
 			}
-			// Re-read unpushed (may have changed after pull).
 			newUnpushed, err := store.ListUnpushedEvents(policyDB)
 			if err != nil {
 				return 0, err
@@ -327,12 +276,10 @@ func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events
 			if len(newUnpushed) == 0 {
 				return 0, nil
 			}
-			// Recompute max server_seq after pull.
 			newMaxSeq, err := store.MaxServerSeq(policyDB)
 			if err != nil {
 				return 0, err
 			}
-			// Retry push once.
 			_, err = client.PostJSON(
 				fmt.Sprintf("/api/v1/perimeters/%s/policy/events", perimeterID),
 				policyPushRequest{Events: newUnpushed, LastKnownServerSeq: newMaxSeq},
@@ -349,7 +296,6 @@ func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events
 	if err := store.MarkEventsPushed(policyDB, resp.ServerSeqAssignments); err != nil {
 		return 0, err
 	}
-
 	return len(resp.ServerSeqAssignments), nil
 }
 

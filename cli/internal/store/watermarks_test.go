@@ -217,8 +217,8 @@ func TestMaxServerSeq(t *testing.T) {
 
 	// Direct insert with server_seq to test MaxServerSeq.
 	_, err = db.Exec(
-		`INSERT INTO policy_events (event_id, event_type, payload, actor, timestamp, parent_hash, hash, server_seq)
-		 VALUES ('test-remote', 'file_rule.added', '{}', 'test', '2024-01-01', '', 'abc', 42)`,
+		`INSERT INTO policy_events (event_id, event_type, payload, actor, timestamp, server_seq)
+		 VALUES ('test-remote', 'file_rule.added', '{}', 'test', '2024-01-01', 42)`,
 	)
 	if err != nil {
 		t.Fatal(err)
