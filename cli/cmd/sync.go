@@ -199,6 +199,11 @@ func doSync(absRoot string, logWriter io.Writer) (*syncResult, error) {
 	pulled += finalPulled
 
 	// --- Data Push ---
+	clientID, err := api.EnsureClientID()
+	if err != nil {
+		return nil, fmt.Errorf("resolve client id: %w", err)
+	}
+
 	dataDB, err := store.OpenDataDB(absRoot)
 	if err != nil {
 		return nil, fmt.Errorf("open data db: %w", err)
@@ -209,7 +214,7 @@ func doSync(absRoot string, logWriter io.Writer) (*syncResult, error) {
 		return nil, fmt.Errorf("migrate data db: %w", err)
 	}
 
-	dataPushed, err := syncDataPush(dataDB, client, pid)
+	dataPushed, err := syncDataPush(dataDB, client, pid, clientID)
 	if err != nil {
 		fmt.Fprintf(logWriter, "warning: data push: %v\n", err)
 		dataPushed = 0
@@ -376,6 +381,7 @@ type ingestWatermarks struct {
 }
 
 type ingestRequest struct {
+	ClientID   string               `json:"client_id"`
 	HookLog    []ingestHookLogEntry `json:"hook_log"`
 	AuditLog   []ingestAuditEntry   `json:"audit_log"`
 	Passes     []ingestPass         `json:"passes"`
@@ -405,7 +411,7 @@ const ingestBatchSize = 1000
 // syncDataPush pushes hook_log, audit_log, passes, and sessions since the last watermarks.
 // Data is sent in batches of up to ingestBatchSize entries per table per request.
 // The loop continues until all tables are fully drained.
-func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID string) (int, error) {
+func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID, clientID string) (int, error) {
 	totalPushed := 0
 
 	for {
@@ -542,6 +548,7 @@ func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID string) (int, 
 		_, err = client.PostJSON(
 			fmt.Sprintf("/api/v1/perimeters/%s/data/ingest", perimeterID),
 			ingestRequest{
+				ClientID: clientID,
 				HookLog:  hookItems,
 				AuditLog: auditItems,
 				Passes:   passItems,

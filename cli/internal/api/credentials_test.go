@@ -60,6 +60,54 @@ func TestSaveAndLoadCredentials(t *testing.T) {
 	}
 }
 
+func TestEnsureClientID_GeneratesAndPersists(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	creds := &Credentials{
+		AccessToken: "token",
+		User:        User{Username: "u"},
+		IssuedAt:    time.Now().UTC(),
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	}
+	if err := SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials: %v", err)
+	}
+
+	id1, err := EnsureClientID()
+	if err != nil {
+		t.Fatalf("EnsureClientID first call: %v", err)
+	}
+	if id1 == "" {
+		t.Fatal("EnsureClientID returned empty id")
+	}
+
+	id2, err := EnsureClientID()
+	if err != nil {
+		t.Fatalf("EnsureClientID second call: %v", err)
+	}
+	if id1 != id2 {
+		t.Fatalf("client_id not stable: %q vs %q", id1, id2)
+	}
+
+	loaded, err := LoadCredentials()
+	if err != nil {
+		t.Fatalf("LoadCredentials: %v", err)
+	}
+	if loaded.ClientID != id1 {
+		t.Fatalf("persisted client_id mismatch: got %q want %q", loaded.ClientID, id1)
+	}
+}
+
+func TestEnsureClientID_NoCredentials(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	if _, err := EnsureClientID(); err == nil {
+		t.Fatal("expected error without credentials, got nil")
+	}
+}
+
 func TestLoadCredentials_NotExist(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)

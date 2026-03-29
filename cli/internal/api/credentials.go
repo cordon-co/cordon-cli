@@ -2,6 +2,7 @@
 package api
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ type User struct {
 // Credentials holds the stored authentication state.
 type Credentials struct {
 	AccessToken string    `json:"access_token"`
+	ClientID    string    `json:"client_id,omitempty"`
 	User        User      `json:"user"`
 	IssuedAt    time.Time `json:"issued_at"`
 	ExpiresAt   time.Time `json:"expires_at"`
@@ -94,4 +96,41 @@ func IsLoggedIn() bool {
 		return false
 	}
 	return c.AccessToken != "" && time.Now().Before(c.ExpiresAt)
+}
+
+// EnsureClientID returns a stable client_id from credentials.json, generating
+// and persisting one if missing.
+func EnsureClientID() (string, error) {
+	creds, err := LoadCredentials()
+	if err != nil {
+		return "", err
+	}
+	if creds == nil {
+		return "", fmt.Errorf("no credentials found")
+	}
+	if creds.ClientID != "" {
+		return creds.ClientID, nil
+	}
+
+	id, err := newClientID()
+	if err != nil {
+		return "", fmt.Errorf("generate client_id: %w", err)
+	}
+	creds.ClientID = id
+	if err := SaveCredentials(creds); err != nil {
+		return "", fmt.Errorf("persist client_id: %w", err)
+	}
+	return id, nil
+}
+
+func newClientID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	// UUIDv4
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }
