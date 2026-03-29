@@ -248,17 +248,33 @@ func logHookEvent(event *hook.Event) {
 	}
 
 	entry := store.HookLogEntry{
-		Ts:             time.Now().UnixMicro(),
-		ToolName:       event.ToolName,
-		FilePath:       store.NormalizeFilePath(event.FilePath, absRoot),
-		ToolInput:      string(event.ToolInput),
-		Decision:       string(event.Decision),
-		OSUser:         store.CurrentOSUser(),
-		Agent:          agent,
-		PassID:         event.PassID,
-		Notify:         event.Notify,
-		SessionID:      event.SessionID,
-		TranscriptPath: event.TranscriptPath,
+		Ts:                   time.Now().UnixMicro(),
+		ToolName:             event.ToolName,
+		FilePath:             store.NormalizeFilePath(event.FilePath, absRoot),
+		ToolInput:            string(event.ToolInput),
+		CommandRaw:           event.CommandRaw,
+		CommandParsed:        event.CommandParsed,
+		CommandParseError:    event.CommandParseError,
+		CommandParser:        event.CommandParser,
+		CommandParserVersion: event.CommandParserVersion,
+		CommandOpsJSON:       event.CommandOpsJSON,
+		DeniedOpIndex: func() int {
+			if event.DeniedOpIndex == 0 && event.DeniedOpReason == "" {
+				return -1
+			}
+			return event.DeniedOpIndex
+		}(),
+		DeniedOpReason:     event.DeniedOpReason,
+		MatchedRulePattern: event.MatchedRulePattern,
+		MatchedRuleType:    event.MatchedRuleType,
+		Ambiguity:          event.Ambiguity,
+		Decision:           string(event.Decision),
+		OSUser:             store.CurrentOSUser(),
+		Agent:              agent,
+		PassID:             event.PassID,
+		Notify:             event.Notify,
+		SessionID:          event.SessionID,
+		TranscriptPath:     event.TranscriptPath,
 	}
 
 	if err := store.InsertHookLog(db, entry); err != nil {

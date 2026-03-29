@@ -48,7 +48,10 @@ func MaxServerSeq(db *sql.DB) (int64, error) {
 // HookLogEntriesSince returns hook_log rows with id > afterID, ordered by id ASC.
 // Pass limit <= 0 to return all matching rows.
 func HookLogEntriesSince(db *sql.DB, afterID int64, limit int) ([]HookLogEntry, int64, error) {
-	q := `SELECT id, ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id, notify, session_id, transcript_path, parent_hash, hash
+	q := `SELECT id, ts, tool_name, file_path, tool_input,
+	             command_raw, command_parsed_ok, command_parse_error, command_parser, command_parser_version, command_ops_json,
+	             denied_op_index, denied_op_reason, matched_rule_pattern, matched_rule_type, ambiguity,
+	             decision, os_user, agent, pass_id, notify, session_id, transcript_path, parent_hash, hash
 		 FROM hook_log WHERE id > ? ORDER BY id ASC`
 	var args []any
 	args = append(args, afterID)
@@ -67,12 +70,17 @@ func HookLogEntriesSince(db *sql.DB, afterID int64, limit int) ([]HookLogEntry, 
 	var maxID int64
 	for rows.Next() {
 		var e HookLogEntry
-		var notify int
-		if err := rows.Scan(&e.ID, &e.Ts, &e.ToolName, &e.FilePath, &e.ToolInput,
-			&e.Decision, &e.OSUser, &e.Agent, &e.PassID, &notify, &e.SessionID, &e.TranscriptPath, &e.ParentHash, &e.Hash); err != nil {
+		var notify, parsed int
+		if err := rows.Scan(
+			&e.ID, &e.Ts, &e.ToolName, &e.FilePath, &e.ToolInput,
+			&e.CommandRaw, &parsed, &e.CommandParseError, &e.CommandParser, &e.CommandParserVersion, &e.CommandOpsJSON,
+			&e.DeniedOpIndex, &e.DeniedOpReason, &e.MatchedRulePattern, &e.MatchedRuleType, &e.Ambiguity,
+			&e.Decision, &e.OSUser, &e.Agent, &e.PassID, &notify, &e.SessionID, &e.TranscriptPath, &e.ParentHash, &e.Hash,
+		); err != nil {
 			return nil, 0, fmt.Errorf("store: scan hook_log entry: %w", err)
 		}
 		e.Notify = notify != 0
+		e.CommandParsed = parsed != 0
 		entries = append(entries, e)
 		if e.ID > maxID {
 			maxID = e.ID

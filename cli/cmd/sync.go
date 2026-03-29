@@ -291,7 +291,7 @@ func syncPolicyPush(policyDB *sql.DB, client *api.Client, perimeterID string) (i
 // policyPushRequest matches spec §3.1.
 type policyPushRequest struct {
 	Events             []store.PolicyEvent `json:"events"`
-	LastKnownServerSeq int64              `json:"last_known_server_seq"`
+	LastKnownServerSeq int64               `json:"last_known_server_seq"`
 }
 
 // policyPushResponse matches spec §3.1.
@@ -357,20 +357,31 @@ func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events
 
 // ingestHookLogEntry matches the spec §4.1 hook_log item shape (includes id).
 type ingestHookLogEntry struct {
-	ID             int64  `json:"id"`
-	Ts             int64  `json:"ts"`
-	ToolName       string `json:"tool_name"`
-	FilePath       string `json:"file_path"`
-	ToolInput      string `json:"tool_input"`
-	Decision       string `json:"decision"`
-	OSUser         string `json:"os_user"`
-	Agent          string `json:"agent"`
-	PassID         string `json:"pass_id"`
-	Notify         bool   `json:"notify"`
-	SessionID      string `json:"session_id"`
-	TranscriptPath string `json:"transcript_path"`
-	ParentHash     string `json:"parent_hash"`
-	Hash           string `json:"hash"`
+	ID                   int64  `json:"id"`
+	Ts                   int64  `json:"ts"`
+	ToolName             string `json:"tool_name"`
+	FilePath             string `json:"file_path"`
+	ToolInput            string `json:"tool_input"`
+	CommandRaw           string `json:"command_raw"`
+	CommandParsed        bool   `json:"command_parsed_ok"`
+	CommandParseError    string `json:"command_parse_error"`
+	CommandParser        string `json:"command_parser"`
+	CommandParserVersion string `json:"command_parser_version"`
+	CommandOpsJSON       string `json:"command_ops_json"`
+	DeniedOpIndex        int    `json:"denied_op_index"`
+	DeniedOpReason       string `json:"denied_op_reason"`
+	MatchedRulePattern   string `json:"matched_rule_pattern"`
+	MatchedRuleType      string `json:"matched_rule_type"`
+	Ambiguity            string `json:"ambiguity"`
+	Decision             string `json:"decision"`
+	OSUser               string `json:"os_user"`
+	Agent                string `json:"agent"`
+	PassID               string `json:"pass_id"`
+	Notify               bool   `json:"notify"`
+	SessionID            string `json:"session_id"`
+	TranscriptPath       string `json:"transcript_path"`
+	ParentHash           string `json:"parent_hash"`
+	Hash                 string `json:"hash"`
 }
 
 // ingestAuditEntry matches the spec §4.1 audit_log item shape (includes id).
@@ -495,20 +506,31 @@ func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID string) (int, 
 		hookItems := make([]ingestHookLogEntry, len(hookEntries))
 		for i, e := range hookEntries {
 			hookItems[i] = ingestHookLogEntry{
-				ID:             e.ID,
-				Ts:             e.Ts,
-				ToolName:       e.ToolName,
-				FilePath:       e.FilePath,
-				ToolInput:      e.ToolInput,
-				Decision:       e.Decision,
-				OSUser:         e.OSUser,
-				Agent:          e.Agent,
-				PassID:         e.PassID,
-				Notify:         e.Notify,
-				SessionID:      e.SessionID,
-				TranscriptPath: e.TranscriptPath,
-				ParentHash:     e.ParentHash,
-				Hash:           e.Hash,
+				ID:                   e.ID,
+				Ts:                   e.Ts,
+				ToolName:             e.ToolName,
+				FilePath:             e.FilePath,
+				ToolInput:            e.ToolInput,
+				CommandRaw:           e.CommandRaw,
+				CommandParsed:        e.CommandParsed,
+				CommandParseError:    e.CommandParseError,
+				CommandParser:        e.CommandParser,
+				CommandParserVersion: e.CommandParserVersion,
+				CommandOpsJSON:       e.CommandOpsJSON,
+				DeniedOpIndex:        e.DeniedOpIndex,
+				DeniedOpReason:       e.DeniedOpReason,
+				MatchedRulePattern:   e.MatchedRulePattern,
+				MatchedRuleType:      e.MatchedRuleType,
+				Ambiguity:            e.Ambiguity,
+				Decision:             e.Decision,
+				OSUser:               e.OSUser,
+				Agent:                e.Agent,
+				PassID:               e.PassID,
+				Notify:               e.Notify,
+				SessionID:            e.SessionID,
+				TranscriptPath:       e.TranscriptPath,
+				ParentHash:           e.ParentHash,
+				Hash:                 e.Hash,
 			}
 		}
 

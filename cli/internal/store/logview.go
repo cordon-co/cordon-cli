@@ -45,7 +45,7 @@ type UnifiedEntry struct {
 	EventType  string    `json:"event_type"` // "hook_allow", "hook_deny", "file_add", …
 	ToolName   string    `json:"tool_name,omitempty"`
 	FilePath   string    `json:"file_path,omitempty"`
-	Command    string    `json:"command,omitempty"`    // Bash command string (from tool_input)
+	Command    string    `json:"command,omitempty"` // Bash command string (from tool_input)
 	FileRuleID string    `json:"file_rule_id,omitempty"`
 	PassID     string    `json:"pass_id,omitempty"`
 	User       string    `json:"user,omitempty"`
@@ -85,7 +85,7 @@ func ListUnifiedLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 
 func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 	q := `SELECT ts, tool_name, file_path, decision, os_user, agent, pass_id, session_id,
-	             COALESCE(json_extract(tool_input, '$.command'), '') FROM hook_log WHERE 1=1`
+	             COALESCE(command_raw, json_extract(tool_input, '$.command'), '') FROM hook_log WHERE 1=1`
 	var args []any
 
 	if f.File != "" {

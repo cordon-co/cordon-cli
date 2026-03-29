@@ -43,16 +43,27 @@ type PolicyChecker func(filePath, cwd string) (allowed bool, passID string, noti
 // Event is returned by Evaluate for every tool invocation (writing or not).
 // It carries all fields needed for audit logging.
 type Event struct {
-	ToolName       string
-	FilePath       string          // may be empty for tools with no file path (e.g. Bash)
-	ToolInput      json.RawMessage // full raw tool_input JSON from the hook payload
-	Decision       Decision
-	PassID         string // non-empty if write was allowed via an active pass
-	Cwd            string // cwd from the hook payload; used by the logger for DB path discovery
-	Notify         bool   // rule had notification flags — triggers immediate background sync
-	Agent          string // detected agent platform (see inferAgent)
-	SessionID      string // agent session identifier
-	TranscriptPath string // path to session transcript (or conversation_id for Cursor)
+	ToolName             string
+	FilePath             string          // may be empty for tools with no file path (e.g. Bash)
+	ToolInput            json.RawMessage // full raw tool_input JSON from the hook payload
+	CommandRaw           string
+	CommandParsed        bool
+	CommandParseError    string
+	CommandParser        string
+	CommandParserVersion string
+	CommandOpsJSON       string
+	DeniedOpIndex        int
+	DeniedOpReason       string
+	MatchedRulePattern   string
+	MatchedRuleType      string
+	Ambiguity            string
+	Decision             Decision
+	PassID               string // non-empty if write was allowed via an active pass
+	Cwd                  string // cwd from the hook payload; used by the logger for DB path discovery
+	Notify               bool   // rule had notification flags — triggers immediate background sync
+	Agent                string // detected agent platform (see inferAgent)
+	SessionID            string // agent session identifier
+	TranscriptPath       string // path to session transcript (or conversation_id for Cursor)
 }
 
 // ReadChecker checks whether a read of filePath from a prevent-read file rule
@@ -348,18 +359,29 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 // detected the command is denied; otherwise it is allowed and logged.
 func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker, rdChecker ReadChecker, cmdChecker CommandChecker) (*Event, error) {
 	command := parseBashToolInput(payload.ToolInput)
+	analysis := analyzeShellCommand(command, payload.Cwd)
 
 	// Check each segment of the command against built-in and custom command rules.
-	segments := splitCompoundCommand(command)
-	for _, seg := range segments {
+	for i, seg := range analysis.Commands {
 		// Built-in rules are always checked (no DB needed).
 		if matched := CheckBuiltinRules(seg); matched != nil {
 			reason := commandRuleDenyReason(matched)
 			event := &Event{
-				ToolName:  payload.ToolName,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
+				ToolName:             payload.ToolName,
+				ToolInput:            payload.ToolInput,
+				CommandRaw:           analysis.CommandRaw,
+				CommandParsed:        analysis.ParsedOK,
+				CommandParseError:    analysis.ParseError,
+				CommandParser:        analysis.Parser,
+				CommandParserVersion: analysis.ParserVersion,
+				CommandOpsJSON:       analysis.opsJSON(),
+				DeniedOpIndex:        i,
+				DeniedOpReason:       reason,
+				MatchedRulePattern:   matched.Pattern,
+				MatchedRuleType:      matched.RuleType,
+				Ambiguity:            analysis.ambiguityText(),
+				Decision:             DecisionDeny,
+				Cwd:                  payload.Cwd,
 			}
 			if err := encodeClaudeDeny(w, reason); err != nil {
 				return nil, err
@@ -373,11 +395,22 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 			if allowed, matched, cmdNotify := cmdChecker(seg, payload.Cwd); !allowed && matched != nil {
 				reason := commandRuleDenyReason(matched)
 				event := &Event{
-					ToolName:  payload.ToolName,
-					ToolInput: payload.ToolInput,
-					Decision:  DecisionDeny,
-					Cwd:       payload.Cwd,
-					Notify:    cmdNotify,
+					ToolName:             payload.ToolName,
+					ToolInput:            payload.ToolInput,
+					CommandRaw:           analysis.CommandRaw,
+					CommandParsed:        analysis.ParsedOK,
+					CommandParseError:    analysis.ParseError,
+					CommandParser:        analysis.Parser,
+					CommandParserVersion: analysis.ParserVersion,
+					CommandOpsJSON:       analysis.opsJSON(),
+					DeniedOpIndex:        i,
+					DeniedOpReason:       reason,
+					MatchedRulePattern:   matched.Pattern,
+					MatchedRuleType:      matched.RuleType,
+					Ambiguity:            analysis.ambiguityText(),
+					Decision:             DecisionDeny,
+					Cwd:                  payload.Cwd,
+					Notify:               cmdNotify,
 				}
 				if err := encodeClaudeDeny(w, reason); err != nil {
 					return nil, err
@@ -388,20 +421,31 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 		}
 	}
 
-	// Check read targets against prevent-read file rules.
-	readTargets := bashReadTargets(command)
-	for _, target := range readTargets {
-		allowed, _, rdNotify := checkRead(rdChecker, target, payload.Cwd)
+	// Check read operations against prevent-read file rules.
+	for i, op := range analysis.Ops {
+		if op.Type != shellOpRead || op.Path == "" {
+			continue
+		}
+		allowed, _, rdNotify := checkRead(rdChecker, op.Path, payload.Cwd)
 		if !allowed {
 			event := &Event{
-				ToolName:  payload.ToolName,
-				FilePath:  target,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
-				Notify:    rdNotify,
+				ToolName:             payload.ToolName,
+				FilePath:             op.Path,
+				ToolInput:            payload.ToolInput,
+				CommandRaw:           analysis.CommandRaw,
+				CommandParsed:        analysis.ParsedOK,
+				CommandParseError:    analysis.ParseError,
+				CommandParser:        analysis.Parser,
+				CommandParserVersion: analysis.ParserVersion,
+				CommandOpsJSON:       analysis.opsJSON(),
+				DeniedOpIndex:        i,
+				DeniedOpReason:       "prevent-read rule violation",
+				Ambiguity:            analysis.ambiguityText(),
+				Decision:             DecisionDeny,
+				Cwd:                  payload.Cwd,
+				Notify:               rdNotify,
 			}
-			reason := readDenyReason(target)
+			reason := readDenyReason(op.Path)
 			if err := encodeClaudeDeny(w, reason); err != nil {
 				return nil, err
 			}
@@ -410,34 +454,56 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 		}
 	}
 
-	targets := bashWriteTargets(command)
+	var mutationTargets []string
+	for _, op := range analysis.Ops {
+		if op.Type == shellOpMutation && op.Path != "" {
+			mutationTargets = append(mutationTargets, op.Path)
+		}
+	}
 
 	// No write pattern detected — allow.
-	if len(targets) == 0 {
+	if len(mutationTargets) == 0 {
 		return &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  "",
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionAllow,
-			Cwd:       payload.Cwd,
+			ToolName:             payload.ToolName,
+			FilePath:             "",
+			ToolInput:            payload.ToolInput,
+			CommandRaw:           analysis.CommandRaw,
+			CommandParsed:        analysis.ParsedOK,
+			CommandParseError:    analysis.ParseError,
+			CommandParser:        analysis.Parser,
+			CommandParserVersion: analysis.ParserVersion,
+			CommandOpsJSON:       analysis.opsJSON(),
+			DeniedOpIndex:        -1,
+			Ambiguity:            analysis.ambiguityText(),
+			Decision:             DecisionAllow,
+			Cwd:                  payload.Cwd,
 		}, nil
 	}
 
 	// Check each target against the policy database. Deny if any target is
 	// covered by a file rule without an active pass. We deny on the first violation found.
-	for _, target := range targets {
+	for i, target := range mutationTargets {
 		allowed, _, pNotify := checkPolicy(checker, target, payload.Cwd)
 		if !allowed {
-			primaryTarget := targets[0]
+			primaryTarget := mutationTargets[0]
 			event := &Event{
-				ToolName:  payload.ToolName,
-				FilePath:  primaryTarget,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
-				Notify:    pNotify,
+				ToolName:             payload.ToolName,
+				FilePath:             primaryTarget,
+				ToolInput:            payload.ToolInput,
+				CommandRaw:           analysis.CommandRaw,
+				CommandParsed:        analysis.ParsedOK,
+				CommandParseError:    analysis.ParseError,
+				CommandParser:        analysis.Parser,
+				CommandParserVersion: analysis.ParserVersion,
+				CommandOpsJSON:       analysis.opsJSON(),
+				DeniedOpIndex:        i,
+				DeniedOpReason:       "file rule mutation violation",
+				Ambiguity:            analysis.ambiguityText(),
+				Decision:             DecisionDeny,
+				Cwd:                  payload.Cwd,
+				Notify:               pNotify,
 			}
-			if err := writeBashDeny(w, errW, primaryTarget, targets); err != nil {
+			if err := writeBashDeny(w, errW, primaryTarget, mutationTargets); err != nil {
 				return nil, err
 			}
 			return event, ErrDenied
@@ -446,11 +512,19 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 
 	// All targets are clear — allow.
 	return &Event{
-		ToolName:  payload.ToolName,
-		FilePath:  targets[0],
-		ToolInput: payload.ToolInput,
-		Decision:  DecisionAllow,
-		Cwd:       payload.Cwd,
+		ToolName:             payload.ToolName,
+		FilePath:             mutationTargets[0],
+		ToolInput:            payload.ToolInput,
+		CommandRaw:           analysis.CommandRaw,
+		CommandParsed:        analysis.ParsedOK,
+		CommandParseError:    analysis.ParseError,
+		CommandParser:        analysis.Parser,
+		CommandParserVersion: analysis.ParserVersion,
+		CommandOpsJSON:       analysis.opsJSON(),
+		DeniedOpIndex:        -1,
+		Ambiguity:            analysis.ambiguityText(),
+		Decision:             DecisionAllow,
+		Cwd:                  payload.Cwd,
 	}, nil
 }
 

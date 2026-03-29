@@ -54,3 +54,31 @@ func TestEvaluate_RunInTerminalAppliesCommandRules(t *testing.T) {
 		t.Fatalf("event.Decision = %q, want %q", event.Decision, DecisionDeny)
 	}
 }
+
+func TestEvaluate_RunInTerminalUsesCwdAwareReadChecks(t *testing.T) {
+	payload := `{
+  "tool_name": "run_in_terminal",
+  "tool_input": {"command":"cd scripts && cat README.md"},
+  "cwd": "/repo"
+}`
+
+	rdChecker := func(filePath, cwd string) (bool, string, bool) {
+		if filePath == "/repo/scripts/README.md" {
+			return false, "", false
+		}
+		return true, "", false
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, rdChecker, nil)
+	if err != ErrDenied {
+		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want non-nil deny event")
+	}
+	if event.FilePath != "/repo/scripts/README.md" {
+		t.Fatalf("event.FilePath = %q, want /repo/scripts/README.md", event.FilePath)
+	}
+}
