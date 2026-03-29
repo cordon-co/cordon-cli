@@ -56,10 +56,14 @@ func UpsertSession(db *sql.DB, s Session) error {
 	return err
 }
 
-// PendingSessions returns sessions from hook_log that either don't exist in the
-// sessions table or have a stale updated_at (older than staleThreshold).
-func PendingSessions(db *sql.DB, staleThreshold time.Duration) ([]PendingSession, error) {
-	cutoff := time.Now().Add(-staleThreshold).UnixMicro()
+// PendingSessions returns sessions from hook_log that have recent hook activity
+// and are not yet extracted for their latest hook timestamp.
+//
+// A session is pending when:
+//   - it has at least one hook event within activityWindow, and
+//   - it has no row in sessions, or sessions.updated_at < latest hook timestamp.
+func PendingSessions(db *sql.DB, activityWindow time.Duration) ([]PendingSession, error) {
+	cutoff := time.Now().Add(-activityWindow).UnixMicro()
 
 	// Include sessions with empty transcript_path (e.g. Cursor, which sends
 	// conversation_id but no transcript on early hook calls). These sessions
@@ -72,8 +76,9 @@ func PendingSessions(db *sql.DB, staleThreshold time.Duration) ([]PendingSession
 		FROM hook_log h
 		LEFT JOIN sessions s ON h.session_id = s.session_id
 		WHERE h.session_id != ''
-		  AND (s.session_id IS NULL OR s.updated_at < ?)
-		GROUP BY h.session_id, h.agent`, cutoff)
+		GROUP BY h.session_id, h.agent
+		HAVING MAX(h.ts) >= ?
+		   AND (MAX(s.updated_at) IS NULL OR MAX(s.updated_at) < MAX(h.ts))`, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("store: pending sessions: %w", err)
 	}

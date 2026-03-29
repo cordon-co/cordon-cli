@@ -15,6 +15,8 @@ import (
 )
 
 var sessionsExtractBackground bool
+const defaultExtractActivityWindow = time.Hour
+const extractActivityWindowEnv = "CORDON_SESSIONS_EXTRACT_ACTIVITY_WINDOW"
 
 var sessionsCmd = &cobra.Command{
 	Use:   "sessions",
@@ -119,7 +121,20 @@ func doExtract(absRoot string, logW *os.File) (int, error) {
 		return 0, err
 	}
 
-	pending, err := store.PendingSessions(db, 0)
+	activityWindow := defaultExtractActivityWindow
+	if raw := os.Getenv(extractActivityWindowEnv); raw != "" {
+		if parsed, parseErr := time.ParseDuration(raw); parseErr != nil {
+			fmt.Fprintf(logW, "extract: invalid %s=%q, using default %s: %v\n",
+				extractActivityWindowEnv, raw, defaultExtractActivityWindow, parseErr)
+		} else if parsed <= 0 {
+			fmt.Fprintf(logW, "extract: non-positive %s=%q, using default %s\n",
+				extractActivityWindowEnv, raw, defaultExtractActivityWindow)
+		} else {
+			activityWindow = parsed
+		}
+	}
+
+	pending, err := store.PendingSessions(db, activityWindow)
 	if err != nil {
 		return 0, err
 	}

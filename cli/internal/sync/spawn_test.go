@@ -37,21 +37,21 @@ func TestSyncDueLogic(t *testing.T) {
 		t.Error("expected sync NOT to be due immediately after writing .last_sync")
 	}
 
-	// Backdate the file to 2 minutes ago = sync IS due.
-	old := time.Now().Add(-2 * time.Minute)
+	// Backdate the file to 2 seconds ago = sync IS due.
+	old := time.Now().Add(-2 * time.Second)
 	if err := os.Chtimes(syncFile, old, old); err != nil {
 		t.Fatal(err)
 	}
 	if !isDue() {
-		t.Error("expected sync to be due after 2 minutes")
+		t.Error("expected sync to be due after 2 seconds")
 	}
 
-	// Set file to 30 seconds ago = sync is NOT due (within 60s interval).
-	recent := time.Now().Add(-30 * time.Second)
+	// Set file to now = sync is NOT due (within 1s interval).
+	recent := time.Now()
 	if err := os.Chtimes(syncFile, recent, recent); err != nil {
 		t.Fatal(err)
 	}
 	if isDue() {
-		t.Error("expected sync NOT to be due within 60s interval")
+		t.Error("expected sync NOT to be due within 1s interval")
 	}
 }

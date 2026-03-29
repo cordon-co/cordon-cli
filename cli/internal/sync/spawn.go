@@ -11,7 +11,7 @@ import (
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
 )
 
-const syncInterval    = 60 * time.Second
+const syncInterval    = 1 * time.Second
 const extractInterval = 30 * time.Second
 
 // SpawnBackgroundSync spawns `cordon sync --background` as a fully detached
@@ -36,7 +36,7 @@ func SpawnBackgroundSync(absRepoRoot string) {
 	}
 }
 
-// SyncDue returns true if no sync has occurred within the last 60 seconds.
+// SyncDue returns true if no sync has occurred within the last second.
 // Returns true if the .last_sync file is missing or older than the interval.
 func SyncDue(absRepoRoot string) bool {
 	syncFile, err := lastSyncPath(absRepoRoot)
