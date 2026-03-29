@@ -41,17 +41,20 @@ func (f LogFilter) wantAuditLog() bool {
 
 // UnifiedEntry is a normalised view of a row from either hook_log or audit_log.
 type UnifiedEntry struct {
-	Time       time.Time `json:"time"`
-	EventType  string    `json:"event_type"` // "hook_allow", "hook_deny", "file_add", …
-	ToolName   string    `json:"tool_name,omitempty"`
-	FilePath   string    `json:"file_path,omitempty"`
-	Command    string    `json:"command,omitempty"` // Bash command string (from tool_input)
-	FileRuleID string    `json:"file_rule_id,omitempty"`
-	PassID     string    `json:"pass_id,omitempty"`
-	User       string    `json:"user,omitempty"`
-	Agent      string    `json:"agent,omitempty"`
-	Detail     string    `json:"detail,omitempty"`
-	SessionID  string    `json:"session_id,omitempty"`
+	Time               time.Time `json:"time"`
+	EventType          string    `json:"event_type"` // "hook_allow", "hook_deny", "file_add", …
+	ToolName           string    `json:"tool_name,omitempty"`
+	FilePath           string    `json:"file_path,omitempty"`
+	Command            string    `json:"command,omitempty"` // Bash command string (from tool_input)
+	DeniedOpReason     string    `json:"denied_op_reason,omitempty"`
+	MatchedRulePattern string    `json:"matched_rule_pattern,omitempty"`
+	MatchedRuleType    string    `json:"matched_rule_type,omitempty"`
+	FileRuleID         string    `json:"file_rule_id,omitempty"`
+	PassID             string    `json:"pass_id,omitempty"`
+	User               string    `json:"user,omitempty"`
+	Agent              string    `json:"agent,omitempty"`
+	Detail             string    `json:"detail,omitempty"`
+	SessionID          string    `json:"session_id,omitempty"`
 }
 
 // ListUnifiedLog queries hook_log and audit_log from the data database, merges
@@ -85,7 +88,9 @@ func ListUnifiedLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 
 func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 	q := `SELECT ts, tool_name, file_path, decision, os_user, agent, pass_id, session_id,
-	             COALESCE(command_raw, json_extract(tool_input, '$.command'), '') FROM hook_log WHERE 1=1`
+	             COALESCE(command_raw, json_extract(tool_input, '$.command'), ''),
+	             denied_op_reason, matched_rule_pattern, matched_rule_type
+	      FROM hook_log WHERE 1=1`
 	var args []any
 
 	if f.File != "" {
@@ -132,7 +137,11 @@ func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 	for rows.Next() {
 		var ts int64
 		var toolName, filePath, decision, osUser, agent, passID, sessionID, command string
-		if err := rows.Scan(&ts, &toolName, &filePath, &decision, &osUser, &agent, &passID, &sessionID, &command); err != nil {
+		var deniedOpReason, matchedRulePattern, matchedRuleType string
+		if err := rows.Scan(
+			&ts, &toolName, &filePath, &decision, &osUser, &agent, &passID, &sessionID, &command,
+			&deniedOpReason, &matchedRulePattern, &matchedRuleType,
+		); err != nil {
 			return nil, fmt.Errorf("store: scan hook_log: %w", err)
 		}
 		eventType := "hook_allow"
@@ -140,15 +149,18 @@ func queryHookLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 			eventType = "hook_deny"
 		}
 		result = append(result, UnifiedEntry{
-			Time:      time.UnixMicro(ts),
-			EventType: eventType,
-			ToolName:  toolName,
-			FilePath:  filePath,
-			Command:   command,
-			User:      osUser,
-			Agent:     agent,
-			PassID:    passID,
-			SessionID: sessionID,
+			Time:               time.UnixMicro(ts),
+			EventType:          eventType,
+			ToolName:           toolName,
+			FilePath:           filePath,
+			Command:            command,
+			DeniedOpReason:     deniedOpReason,
+			MatchedRulePattern: matchedRulePattern,
+			MatchedRuleType:    matchedRuleType,
+			User:               osUser,
+			Agent:              agent,
+			PassID:             passID,
+			SessionID:          sessionID,
 		})
 	}
 	return result, rows.Err()

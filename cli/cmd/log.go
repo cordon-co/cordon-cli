@@ -231,10 +231,11 @@ func followEntryKey(e store.UnifiedEntry) string {
 	return e.Time.Format(time.RFC3339Nano) + "|" + e.EventType + "|" + e.ToolName + "|" + e.FilePath + "|" + e.Detail
 }
 
-// formatLogEntry writes a two-line coloured entry to buf.
+// formatLogEntry writes a coloured entry to buf.
 //
-// Line 1:  <BADGE>  [tool  ]  <subject>
-// Line 2:           user: …  ·  agent: …  ·  session: …  ·  <timestamp>
+// Line 1: <BADGE>  [tool  ]  <subject>
+// Line 2 (deny only): Reason: <reason text>
+// Line 3: metadata line with timestamp, agent, session, pass, and detail.
 func formatLogEntry(buf *bytes.Buffer, e store.UnifiedEntry) {
 	const reset = "\033[0m"
 	const dim = "\033[2m"
@@ -259,6 +260,21 @@ func formatLogEntry(buf *bytes.Buffer, e store.UnifiedEntry) {
 		fmt.Fprintf(buf, "  %s", subject)
 	}
 	buf.WriteByte('\n')
+
+	if e.EventType == "hook_deny" && e.DeniedOpReason != "" {
+		reason := e.DeniedOpReason
+		var parts []string
+		if e.MatchedRulePattern != "" {
+			parts = append(parts, "rule: "+e.MatchedRulePattern)
+		}
+		if e.MatchedRuleType != "" {
+			parts = append(parts, "type: "+e.MatchedRuleType)
+		}
+		if len(parts) > 0 {
+			reason += " (" + strings.Join(parts, ", ") + ")"
+		}
+		fmt.Fprintf(buf, "        %sReason:%s %s\n", dim, reset, reason)
+	}
 
 	// Metadata line: <timestamp>  ·  <agent>  ·  <session>  ·  <pass>  ·  <detail>
 	meta := []string{ts}
