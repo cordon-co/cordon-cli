@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 )
 
@@ -94,5 +95,31 @@ func TestAddFileRule_DuplicatePattern(t *testing.T) {
 	_, err := AddFileRule(db, ".env", "deny", "standard", "test", false)
 	if !errors.Is(err, ErrDuplicatePattern) {
 		t.Errorf("expected ErrDuplicatePattern, got %v", err)
+	}
+}
+
+func TestNormalizeFilePath_AbsoluteInsideRepo(t *testing.T) {
+	repo := filepath.Join(string(filepath.Separator), "tmp", "repo")
+	in := filepath.Join(repo, "src", "main.go")
+	got := NormalizeFilePath(in, repo)
+	if got != filepath.Join("src", "main.go") {
+		t.Fatalf("NormalizeFilePath(%q, %q) = %q, want %q", in, repo, got, filepath.Join("src", "main.go"))
+	}
+}
+
+func TestNormalizeFilePath_AbsoluteOutsideRepo(t *testing.T) {
+	repo := filepath.Join(string(filepath.Separator), "tmp", "repo")
+	in := filepath.Join(string(filepath.Separator), "tmp", "other", "main.go")
+	got := NormalizeFilePath(in, repo)
+	if got != in {
+		t.Fatalf("NormalizeFilePath(%q, %q) = %q, want %q", in, repo, got, in)
+	}
+}
+
+func TestNormalizeFilePath_RelativeCleaned(t *testing.T) {
+	in := filepath.Join(".", "src", "..", "src", "main.go")
+	got := NormalizeFilePath(in, filepath.Join(string(filepath.Separator), "tmp", "repo"))
+	if got != filepath.Join("src", "main.go") {
+		t.Fatalf("NormalizeFilePath(%q, repo) = %q, want %q", in, got, filepath.Join("src", "main.go"))
 	}
 }

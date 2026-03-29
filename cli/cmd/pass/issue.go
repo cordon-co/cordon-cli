@@ -55,8 +55,8 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pass issue: resolve repo root: %w", err)
 	}
 
-	// Normalize the file path to repo-relative (consistent with how file rules are stored).
-	issueFile = store.NormalizePattern(issueFile, absRoot)
+	// Normalize the file path to canonical repo-relative form when possible.
+	issueFile = store.NormalizeFilePath(issueFile, absRoot)
 
 	// Validate the file is covered by a file rule.
 	policyDB, err := store.OpenPolicyDB(absRoot)

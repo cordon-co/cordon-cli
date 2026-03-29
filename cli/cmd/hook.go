@@ -56,7 +56,7 @@ var hookCmd = &cobra.Command{
 				}
 
 				// Trigger background transcript extraction on every hook with session
-			// data. The flock in the extract command prevents concurrent runs.
+				// data. The flock in the extract command prevents concurrent runs.
 				if event.SessionID != "" && event.TranscriptPath != "" {
 					cordsync.SpawnBackgroundExtract(absRoot)
 				}
@@ -250,7 +250,7 @@ func logHookEvent(event *hook.Event) {
 	entry := store.HookLogEntry{
 		Ts:             time.Now().UnixMicro(),
 		ToolName:       event.ToolName,
-		FilePath:       event.FilePath,
+		FilePath:       store.NormalizeFilePath(event.FilePath, absRoot),
 		ToolInput:      string(event.ToolInput),
 		Decision:       string(event.Decision),
 		OSUser:         store.CurrentOSUser(),
