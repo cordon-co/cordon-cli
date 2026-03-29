@@ -140,12 +140,12 @@ type hookPayload struct {
 // toolInputPath extracts the file path from a tool's input JSON.
 // Different agents use different field names for the target file path.
 type toolInputPath struct {
-	FilePath     string `json:"file_path"`   // Claude Code (Write, Edit, etc.)
-	FilePathCC   string `json:"filePath"`    // VS Code Copilot (read_file, etc.)
-	Path         string `json:"path"`        // generic fallback
-	Filename     string `json:"filename"`    // VS Code Copilot (create_file, etc.)
-	Destination  string `json:"destination"` // VS Code Copilot (moveFile, renameFile)
-	NewPath      string `json:"newPath"`     // VS Code Copilot (renameFile variant)
+	FilePath    string `json:"file_path"`   // Claude Code (Write, Edit, etc.)
+	FilePathCC  string `json:"filePath"`    // VS Code Copilot (read_file, etc.)
+	Path        string `json:"path"`        // generic fallback
+	Filename    string `json:"filename"`    // VS Code Copilot (create_file, etc.)
+	Destination string `json:"destination"` // VS Code Copilot (moveFile, renameFile)
+	NewPath     string `json:"newPath"`     // VS Code Copilot (renameFile variant)
 }
 
 // setSession stamps the session tracking and agent fields from the payload onto the event.
@@ -232,8 +232,8 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		payload.SessionID = payload.ConversationID
 	}
 
-	// Bash tool: check whether the command targets any files via shell write patterns.
-	if payload.ToolName == "Bash" || payload.ToolName == "bash" {
+	// Shell command tools: check command rules and shell read/write targets.
+	if isShellCommandTool(payload.ToolName) {
 		event, err := evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker)
 		if event != nil {
 			payload.setSession(event)
@@ -454,6 +454,15 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 	}, nil
 }
 
+func isShellCommandTool(toolName string) bool {
+	switch strings.ToLower(strings.TrimSpace(toolName)) {
+	case "bash", "run_in_terminal":
+		return true
+	default:
+		return false
+	}
+}
+
 // evaluateApplyPatch handles VS Code Copilot's apply_patch tool.
 // The patch body is in the "input" field and contains one or more file paths
 // as "*** Update File: <path>" or "*** Add File: <path>" directives.
@@ -649,4 +658,3 @@ func encodeClaudeDeny(w io.Writer, reason string) error {
 func writeCopilotDeny(errW io.Writer, reason string) {
 	fmt.Fprintf(errW, "%s\n", reason)
 }
-
