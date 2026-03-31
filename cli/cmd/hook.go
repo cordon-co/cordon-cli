@@ -261,13 +261,13 @@ func logHookEvent(event *hook.Event) {
 		Ts:                   time.Now().UnixMicro(),
 		ToolName:             event.ToolName,
 		FilePath:             store.NormalizeFilePath(event.FilePath, absRoot),
-		ToolInput:            string(event.ToolInput),
-		CommandRaw:           event.CommandRaw,
+		ToolInput:            sanitizeRepoPathInJSONStrings(string(event.ToolInput), absRoot),
+		CommandRaw:           sanitizeRepoPathInString(event.CommandRaw, absRoot),
 		CommandParsed:        event.CommandParsed,
 		CommandParseError:    event.CommandParseError,
 		CommandParser:        event.CommandParser,
 		CommandParserVersion: event.CommandParserVersion,
-		CommandOpsJSON:       event.CommandOpsJSON,
+		CommandOpsJSON:       sanitizeRepoPathInString(event.CommandOpsJSON, absRoot),
 		DeniedOpIndex: func() int {
 			if event.DeniedOpIndex == 0 && event.DeniedOpReason == "" {
 				return -1
@@ -284,7 +284,7 @@ func logHookEvent(event *hook.Event) {
 		PassID:             event.PassID,
 		Notify:             event.Notify,
 		SessionID:          event.SessionID,
-		TranscriptPath:     event.TranscriptPath,
+		TranscriptPath:     sanitizeRepoPathInString(event.TranscriptPath, absRoot),
 		SecretsDetected:    event.SecretsDetected,
 		SecretRuleIDs:      encodeRuleIDs(event.SecretRuleIDs),
 	}
