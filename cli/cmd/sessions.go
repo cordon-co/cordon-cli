@@ -75,7 +75,11 @@ func runExtractBackground(absRoot string) error {
 	if err != nil {
 		return err
 	}
-	defer lockFile.Close()
+	defer func() {
+		if cerr := lockFile.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing extract lock file %s: %v\n", lockPath, cerr)
+		}
+	}()
 
 	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return nil // another extraction is running — exit silently

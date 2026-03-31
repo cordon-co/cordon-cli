@@ -89,7 +89,11 @@ func runSyncBackground(absRoot string) error {
 	if err != nil {
 		return err
 	}
-	defer lockFile.Close()
+	defer func() {
+		if err := lockFile.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "sync: close lock file: %v\n", err)
+		}
+	}()
 
 	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return nil // another sync is running — exit silently
