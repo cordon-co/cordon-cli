@@ -64,6 +64,8 @@ type Event struct {
 	Agent                string // detected agent platform (see inferAgent)
 	SessionID            string // agent session identifier
 	TranscriptPath       string // path to session transcript (or conversation_id for Cursor)
+	SecretsDetected      bool   // true when one or more gitleaks findings were detected
+	SecretRuleIDs        []string
 }
 
 // ReadChecker checks whether a read of filePath from a prevent-read file rule
@@ -698,13 +700,7 @@ func policyBashDenyReason(primary string, all []string) string {
 
 func writeDeny(w io.Writer, errW io.Writer, toolName, path string) error {
 	reason := denyReasonForTool(toolName, path)
-	if err := encodeClaudeDeny(w, reason); err != nil {
-		return err
-	}
-	if copilotTools[toolName] {
-		writeCopilotDeny(errW, reason)
-	}
-	return nil
+	return WriteCustomDeny(w, errW, toolName, reason)
 }
 
 func denyReasonForTool(toolName, path string) string {
@@ -723,10 +719,18 @@ func denyOpReasonForTool(toolName string) string {
 
 func writeBashDeny(w io.Writer, errW io.Writer, primary string, all []string) error {
 	reason := policyBashDenyReason(primary, all)
+	return WriteCustomDeny(w, errW, "Bash", reason)
+}
+
+// WriteCustomDeny writes a deny response with a custom reason while preserving
+// agent-specific deny response behavior.
+func WriteCustomDeny(w io.Writer, errW io.Writer, toolName, reason string) error {
 	if err := encodeClaudeDeny(w, reason); err != nil {
 		return err
 	}
-	fmt.Fprintf(errW, "%s\n", reason)
+	if copilotTools[toolName] || isShellCommandTool(toolName) {
+		writeCopilotDeny(errW, reason)
+	}
 	return nil
 }
 

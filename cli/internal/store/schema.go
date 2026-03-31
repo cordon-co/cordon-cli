@@ -137,7 +137,9 @@ func MigrateDataDB(db *sql.DB) error {
 			decision   TEXT    NOT NULL CHECK(decision IN ('allow','deny')),
 			os_user    TEXT    NOT NULL DEFAULT '',
 			agent      TEXT    NOT NULL DEFAULT '',
-			pass_id    TEXT    NOT NULL DEFAULT ''
+			pass_id    TEXT    NOT NULL DEFAULT '',
+			secrets_detected INTEGER NOT NULL DEFAULT 0,
+			secret_rule_ids  TEXT    NOT NULL DEFAULT '[]'
 		)`,
 		`CREATE INDEX IF NOT EXISTS hook_log_ts        ON hook_log(ts)`,
 		`CREATE INDEX IF NOT EXISTS hook_log_file_path ON hook_log(file_path)`,
@@ -264,6 +266,8 @@ func MigrateDataDB(db *sql.DB) error {
 		// Session tracking columns for transcript extraction.
 		`ALTER TABLE hook_log ADD COLUMN session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE hook_log ADD COLUMN transcript_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN secrets_detected INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE hook_log ADD COLUMN secret_rule_ids TEXT NOT NULL DEFAULT '[]'`,
 	}
 	for _, stmt := range alterStmts {
 		if _, err := db.Exec(stmt); err != nil && !isDuplicateColumn(err) {

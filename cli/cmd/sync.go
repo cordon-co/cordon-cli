@@ -331,6 +331,8 @@ type ingestHookLogEntry struct {
 	Notify               bool   `json:"notify"`
 	SessionID            string `json:"session_id"`
 	TranscriptPath       string `json:"transcript_path"`
+	SecretsDetected      int    `json:"secrets_detected"`
+	SecretRuleIDs        string `json:"secret_rule_ids"`
 	ParentHash           string `json:"parent_hash"`
 	Hash                 string `json:"hash"`
 }
@@ -457,6 +459,10 @@ func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID, clientID stri
 		// Convert to spec-shaped structs.
 		hookItems := make([]ingestHookLogEntry, len(hookEntries))
 		for i, e := range hookEntries {
+			secretsDetected := 0
+			if e.SecretsDetected {
+				secretsDetected = 1
+			}
 			hookItems[i] = ingestHookLogEntry{
 				ID:                   e.ID,
 				Ts:                   e.Ts,
@@ -481,6 +487,8 @@ func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID, clientID stri
 				Notify:               e.Notify,
 				SessionID:            e.SessionID,
 				TranscriptPath:       e.TranscriptPath,
+				SecretsDetected:      secretsDetected,
+				SecretRuleIDs:        e.SecretRuleIDs,
 				ParentHash:           e.ParentHash,
 				Hash:                 e.Hash,
 			}

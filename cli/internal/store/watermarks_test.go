@@ -169,6 +169,39 @@ func TestHookLogEntriesSince(t *testing.T) {
 	}
 }
 
+func TestHookLogEntriesSince_SecretMetadata(t *testing.T) {
+	db := openTestDataDB(t)
+	defer db.Close()
+
+	err := InsertHookLog(db, HookLogEntry{
+		Ts:              1234,
+		ToolName:        "Write",
+		FilePath:        "/secret.txt",
+		ToolInput:       `{"content":"<SECRET:github-pat>"}`,
+		Decision:        "allow",
+		OSUser:          "tester",
+		SecretsDetected: true,
+		SecretRuleIDs:   `["github-pat"]`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _, err := HookLogEntriesSince(db, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if !entries[0].SecretsDetected {
+		t.Fatal("SecretsDetected = false, want true")
+	}
+	if entries[0].SecretRuleIDs != `["github-pat"]` {
+		t.Fatalf("SecretRuleIDs = %q, want [\"github-pat\"]", entries[0].SecretRuleIDs)
+	}
+}
+
 func TestMaxServerSeq(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/cordon-co/cordon-cli/cli/internal/api"
 	"github.com/cordon-co/cordon-cli/cli/internal/hook"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
+	"github.com/cordon-co/cordon-cli/cli/internal/secrets"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
 	cordsync "github.com/cordon-co/cordon-cli/cli/internal/sync"
 	"github.com/spf13/cobra"
@@ -35,10 +37,18 @@ var hookCmd = &cobra.Command{
 	Hidden: true, // not shown in help; invoked only by agent hook config
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		action := api.ReadSecretDetectionAction()
+		secretScanner, err := secrets.NewScanner()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: secret detector init failed: %v\n", err)
+			secretScanner = nil
+		}
+
 		checker := buildPolicyChecker()
 		rdChecker := buildReadChecker()
 		cmdChecker := buildCommandChecker()
 		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker, rdChecker, cmdChecker)
+		err = applySecretDetection(event, err, os.Stdout, os.Stderr, secretScanner, action)
 
 		// Log every invocation. Logging failures are non-fatal (fail-open).
 		if event != nil {
@@ -275,11 +285,24 @@ func logHookEvent(event *hook.Event) {
 		Notify:             event.Notify,
 		SessionID:          event.SessionID,
 		TranscriptPath:     event.TranscriptPath,
+		SecretsDetected:    event.SecretsDetected,
+		SecretRuleIDs:      encodeRuleIDs(event.SecretRuleIDs),
 	}
 
 	if err := store.InsertHookLog(db, entry); err != nil {
 		fmt.Fprintf(os.Stderr, "cordon: audit log: insert: %v\n", err)
 	}
+}
+
+func encodeRuleIDs(ruleIDs []string) string {
+	if len(ruleIDs) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(ruleIDs)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }
 
 // resolveRepoRoot returns the absolute repo root to use for locating the data

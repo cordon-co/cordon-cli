@@ -59,8 +59,15 @@ type Client struct {
 
 // configFile represents ~/.cordon/config.json.
 type configFile struct {
-	APIURL string `json:"api_url"`
+	APIURL                string `json:"api_url"`
+	SecretDetectionAction string `json:"secret_detection_action"`
 }
+
+const (
+	SecretDetectionActionCensor = "censor"
+	SecretDetectionActionDeny   = "deny"
+	SecretDetectionActionAllow  = "allow"
+)
 
 // resolveBaseURL returns the API base URL from env, config file, or default.
 func resolveBaseURL() string {
@@ -230,4 +237,31 @@ func ReadConfigURL() string {
 		return cfg.APIURL
 	}
 	return ""
+}
+
+// ReadSecretDetectionAction returns the secret detection action from
+// ~/.cordon/config.json. Missing, unreadable, malformed, or invalid values
+// default to "censor".
+func ReadSecretDetectionAction() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return SecretDetectionActionCensor
+	}
+
+	data, err := os.ReadFile(filepath.Join(home, ".cordon", "config.json"))
+	if err != nil {
+		return SecretDetectionActionCensor
+	}
+
+	var cfg configFile
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return SecretDetectionActionCensor
+	}
+
+	switch cfg.SecretDetectionAction {
+	case SecretDetectionActionCensor, SecretDetectionActionDeny, SecretDetectionActionAllow:
+		return cfg.SecretDetectionAction
+	default:
+		return SecretDetectionActionCensor
+	}
 }

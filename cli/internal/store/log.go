@@ -31,6 +31,8 @@ type HookLogEntry struct {
 	Notify               bool   // rule had notification flags
 	SessionID            string // agent session identifier
 	TranscriptPath       string // path to session transcript (or conversation_id for Cursor)
+	SecretsDetected      bool
+	SecretRuleIDs        string // JSON array text of unique detected rule IDs
 	ParentHash           string // hash of previous hook_log entry
 	Hash                 string // SHA-256 hash for tamper evidence
 }
@@ -60,18 +62,22 @@ func InsertHookLog(db *sql.DB, e HookLogEntry) error {
 	if e.CommandParsed {
 		parsed = 1
 	}
+	var secretsDetected int
+	if e.SecretsDetected {
+		secretsDetected = 1
+	}
 
 	_, err = db.Exec(
 		`INSERT INTO hook_log (
 			ts, tool_name, file_path, tool_input,
 			command_raw, command_parsed_ok, command_parse_error, command_parser, command_parser_version, command_ops_json,
 			denied_op_index, denied_op_reason, matched_rule_pattern, matched_rule_type, ambiguity,
-			decision, os_user, agent, pass_id, notify, session_id, transcript_path, parent_hash, hash
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			decision, os_user, agent, pass_id, notify, session_id, transcript_path, secrets_detected, secret_rule_ids, parent_hash, hash
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.Ts, e.ToolName, e.FilePath, e.ToolInput,
 		e.CommandRaw, parsed, e.CommandParseError, e.CommandParser, e.CommandParserVersion, e.CommandOpsJSON,
 		e.DeniedOpIndex, e.DeniedOpReason, e.MatchedRulePattern, e.MatchedRuleType, e.Ambiguity,
-		e.Decision, e.OSUser, e.Agent, e.PassID, notify, e.SessionID, e.TranscriptPath, e.ParentHash, e.Hash,
+		e.Decision, e.OSUser, e.Agent, e.PassID, notify, e.SessionID, e.TranscriptPath, secretsDetected, e.SecretRuleIDs, e.ParentHash, e.Hash,
 	)
 	return err
 }

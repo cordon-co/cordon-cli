@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -107,32 +109,32 @@ func TestClient_PostJSON(t *testing.T) {
 
 func TestClient_ErrorResponses(t *testing.T) {
 	tests := []struct {
-		name       string
-		status     int
-		body       string
+		name         string
+		status       int
+		body         string
 		wantSentinel error
-		wantCode   string
+		wantCode     string
 	}{
 		{
-			name:       "401 unauthorized",
-			status:     401,
-			body:       `{"error":"token_expired","message":"JWT has expired"}`,
+			name:         "401 unauthorized",
+			status:       401,
+			body:         `{"error":"token_expired","message":"JWT has expired"}`,
 			wantSentinel: ErrUnauthorized,
-			wantCode:   "token_expired",
+			wantCode:     "token_expired",
 		},
 		{
-			name:       "403 forbidden",
-			status:     403,
-			body:       `{"error":"access_denied"}`,
+			name:         "403 forbidden",
+			status:       403,
+			body:         `{"error":"access_denied"}`,
 			wantSentinel: ErrForbidden,
-			wantCode:   "access_denied",
+			wantCode:     "access_denied",
 		},
 		{
-			name:       "404 not found",
-			status:     404,
-			body:       `{"error":"perimeter_not_found","message":"No perimeter registered"}`,
+			name:         "404 not found",
+			status:       404,
+			body:         `{"error":"perimeter_not_found","message":"No perimeter registered"}`,
 			wantSentinel: ErrNotFound,
-			wantCode:   "perimeter_not_found",
+			wantCode:     "perimeter_not_found",
 		},
 		{
 			name:     "428 pending",
@@ -235,5 +237,53 @@ func TestAPIError_Is(t *testing.T) {
 	err403 := &APIError{StatusCode: 403, Code: "access_denied"}
 	if !errors.Is(err403, ErrForbidden) {
 		t.Error("403 should match ErrForbidden")
+	}
+}
+
+func TestReadSecretDetectionAction_DefaultsToCensor(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	if got := ReadSecretDetectionAction(); got != SecretDetectionActionCensor {
+		t.Fatalf("ReadSecretDetectionAction() = %q, want %q", got, SecretDetectionActionCensor)
+	}
+}
+
+func TestReadSecretDetectionAction_ParsesKnownValues(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	if err := os.MkdirAll(filepath.Join(tmp, ".cordon"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		value string
+		want  string
+	}{
+		{value: SecretDetectionActionCensor, want: SecretDetectionActionCensor},
+		{value: SecretDetectionActionDeny, want: SecretDetectionActionDeny},
+		{value: SecretDetectionActionAllow, want: SecretDetectionActionAllow},
+	}
+	for _, tt := range tests {
+		data := []byte(`{"secret_detection_action":"` + tt.value + `"}`)
+		if err := os.WriteFile(filepath.Join(tmp, ".cordon", "config.json"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := ReadSecretDetectionAction(); got != tt.want {
+			t.Fatalf("value=%q got %q, want %q", tt.value, got, tt.want)
+		}
+	}
+}
+
+func TestReadSecretDetectionAction_InvalidDefaultsToCensor(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	if err := os.MkdirAll(filepath.Join(tmp, ".cordon"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, ".cordon", "config.json"), []byte(`{"secret_detection_action":"bad"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadSecretDetectionAction(); got != SecretDetectionActionCensor {
+		t.Fatalf("ReadSecretDetectionAction() = %q, want %q", got, SecretDetectionActionCensor)
 	}
 }
