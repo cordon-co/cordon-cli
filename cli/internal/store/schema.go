@@ -14,7 +14,7 @@ func MigratePolicyDB(db *sql.DB) error {
 		// id:             UUID v4 (hex string).
 		// pattern:        file path, directory path, or glob pattern.
 		// file_access:    'deny' (blocks access) or 'allow' (permits access, overrides deny rules).
-		// file_authority: 'standard' (any member) or 'guardian' (guardian/admin only).
+		// file_authority: 'standard' (any member) or 'elevated' (elevated/admin only).
 		// prevent_write:  1 = block agent write tools (always true for now).
 		// prevent_read:   1 = also block agent read tools (opt-in via --prevent-read).
 		// created_by:     user identifier (github username or OS username for local users).
@@ -24,7 +24,7 @@ func MigratePolicyDB(db *sql.DB) error {
 			id             TEXT    PRIMARY KEY,
 			pattern        TEXT    NOT NULL,
 			file_access    TEXT    NOT NULL DEFAULT 'deny' CHECK(file_access IN ('allow','deny')),
-			file_authority TEXT    NOT NULL DEFAULT 'standard' CHECK(file_authority IN ('standard','guardian')),
+			file_authority TEXT    NOT NULL DEFAULT 'standard' CHECK(file_authority IN ('standard','elevated')),
 			prevent_write  INTEGER NOT NULL DEFAULT 1,
 			prevent_read   INTEGER NOT NULL DEFAULT 0,
 			created_by     TEXT    NOT NULL DEFAULT '',
@@ -37,14 +37,14 @@ func MigratePolicyDB(db *sql.DB) error {
 		//
 		// pattern:        glob-style pattern matched against the full bash command string.
 		// rule_access:    'deny' (blocks command) or 'allow' (permits command, overrides deny rules).
-		// rule_authority: 'standard' (any member) or 'guardian' (guardian/admin only).
+		// rule_authority: 'standard' (any member) or 'elevated' (elevated/admin only).
 		// created_by:     user identifier.
 		// created_at / updated_at: ISO 8601 timestamps.
 		`CREATE TABLE IF NOT EXISTS command_rules (
 			id             TEXT PRIMARY KEY,
 			pattern        TEXT NOT NULL,
 			rule_access    TEXT NOT NULL DEFAULT 'deny' CHECK(rule_access IN ('allow','deny')),
-			rule_authority TEXT NOT NULL DEFAULT 'standard' CHECK(rule_authority IN ('standard','guardian')),
+			rule_authority TEXT NOT NULL DEFAULT 'standard' CHECK(rule_authority IN ('standard','elevated')),
 			created_by     TEXT NOT NULL DEFAULT '',
 			created_at     TEXT NOT NULL,
 			updated_at     TEXT NOT NULL
@@ -60,10 +60,44 @@ func MigratePolicyDB(db *sql.DB) error {
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
 		)`,
+
+		// policy_events — immutable, append-only log of every policy mutation.
+		// The existing file_rules and command_rules tables are projections rebuilt
+		// from this event log. The hash chain provides tamper detection and
+		// deterministic replay for sync.
+		`CREATE TABLE IF NOT EXISTS policy_events (
+			seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_id       TEXT    NOT NULL UNIQUE,
+			event_type     TEXT    NOT NULL,
+			payload        TEXT    NOT NULL,
+			actor          TEXT    NOT NULL,
+			timestamp      TEXT    NOT NULL,
+			parent_hash    TEXT    NOT NULL DEFAULT '',
+			hash           TEXT    NOT NULL,
+			server_seq     INTEGER
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_policy_events_server_seq ON policy_events(server_seq)`,
 	}
 
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+
+	// Migrate existing rules to policy events if the event log is empty but
+	// rules already exist (pre-event-sourcing databases).
+	if err := migrateExistingRulesToEvents(db); err != nil {
+		return err
+	}
+
+	// Additive column migrations for notification flag on policy tables.
+	policyAlterStmts := []string{
+		`ALTER TABLE file_rules ADD COLUMN notify INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE command_rules ADD COLUMN notify INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, stmt := range policyAlterStmts {
+		if _, err := db.Exec(stmt); err != nil && !isDuplicateColumn(err) {
 			return err
 		}
 	}
@@ -108,7 +142,7 @@ func MigrateDataDB(db *sql.DB) error {
 		// pattern:          the file rule pattern at time of issuance (denormalized for audit).
 		// file_path:        specific file if pass is file-scoped; empty string if rule-wide.
 		// issued_to:        user identifier of pass recipient.
-		// issued_by:        user identifier of pass issuer (self or guardian).
+		// issued_by:        user identifier of pass issuer (self or elevated).
 		// status:           'active', 'expired', or 'revoked'.
 		// duration_minutes: NULL for indefinite passes.
 		// issued_at:        ISO 8601 timestamp.
@@ -172,6 +206,12 @@ func MigrateDataDB(db *sql.DB) error {
 	// we ignore that specific error ("duplicate column name").
 	alterStmts := []string{
 		`ALTER TABLE hook_log ADD COLUMN pass_id TEXT NOT NULL DEFAULT ''`,
+		// Hash chain columns for tamper evidence.
+		`ALTER TABLE hook_log ADD COLUMN notify INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE hook_log ADD COLUMN parent_hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audit_log ADD COLUMN parent_hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE audit_log ADD COLUMN hash TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alterStmts {
 		if _, err := db.Exec(stmt); err != nil && !isDuplicateColumn(err) {

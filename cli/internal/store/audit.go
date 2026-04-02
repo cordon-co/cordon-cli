@@ -18,20 +18,37 @@ type AuditEntry struct {
 	Agent      string // agent platform identifier for hook events
 	Detail     string // additional context (deny reason, etc.)
 	Timestamp  string // ISO 8601; auto-set to now if empty
+	ParentHash string // hash of previous audit_log entry
+	Hash       string // SHA-256 hash for tamper evidence
 }
 
 // InsertAudit appends a structured event to the audit_log table.
 // If e.Timestamp is empty, the current UTC time is used.
+// The hash chain is computed automatically from the previous entry.
 func InsertAudit(db *sql.DB, e AuditEntry) error {
 	if e.Timestamp == "" {
 		e.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	}
-	_, err := db.Exec(
+
+	// Read the hash of the most recent entry for chain linkage.
+	var parentHash string
+	err := db.QueryRow("SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1").Scan(&parentHash)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("store: read audit_log parent hash: %w", err)
+	}
+
+	e.ParentHash = parentHash
+	e.Hash = computeDataHash(
+		e.EventType, e.FilePath, e.User, e.Agent,
+		e.Detail, e.Timestamp, parentHash,
+	)
+
+	_, err = db.Exec(
 		`INSERT INTO audit_log
-		 (event_type, tool_name, file_path, file_rule_id, pass_id, user, agent, detail, timestamp)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (event_type, tool_name, file_path, file_rule_id, pass_id, user, agent, detail, timestamp, parent_hash, hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.EventType, e.ToolName, e.FilePath, e.FileRuleID, e.PassID,
-		e.User, e.Agent, e.Detail, e.Timestamp,
+		e.User, e.Agent, e.Detail, e.Timestamp, e.ParentHash, e.Hash,
 	)
 	if err != nil {
 		return fmt.Errorf("store: insert audit: %w", err)

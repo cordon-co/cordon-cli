@@ -97,8 +97,8 @@ func runCommandAdd(cmd *cobra.Command, args []string) error {
 	if r.RuleType == "allow" {
 		ruleLabel = "allow command rule"
 	}
-	if r.RuleAuthority == "guardian" {
-		ruleLabel += " (guardian)"
+	if r.RuleAuthority == "elevated" {
+		ruleLabel += " (elevated)"
 	}
 	fmt.Printf("added %s: %s\n", ruleLabel, r.Pattern)
 	return nil

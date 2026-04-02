@@ -32,12 +32,13 @@ const (
 //   - allowed=true,  passID=""    — file is not covered by any file rule (allow)
 //   - allowed=true,  passID="…"   — file is covered by a file rule and has an active pass (allow)
 //   - allowed=false, passID=""    — file is covered by a file rule with no active pass (deny)
+//   - notify=true                 — the matched rule has notification flags set
 //
 // On infrastructure errors (DB unreadable, etc.) the checker should return
-// (true, "") to fail-open per Cordon's fail-open policy.
+// (true, "", false) to fail-open per Cordon's fail-open policy.
 //
 // A nil PolicyChecker causes all writes to be allowed (fail-open).
-type PolicyChecker func(filePath, cwd string) (allowed bool, passID string)
+type PolicyChecker func(filePath, cwd string) (allowed bool, passID string, notify bool)
 
 // Event is returned by Evaluate for every tool invocation (writing or not).
 // It carries all fields needed for audit logging.
@@ -48,6 +49,7 @@ type Event struct {
 	Decision  Decision
 	PassID    string // non-empty if write was allowed via an active pass
 	Cwd       string // cwd from the hook payload; used by the logger for DB path discovery
+	Notify    bool   // rule had notification flags — triggers immediate background sync
 }
 
 // ReadChecker checks whether a read of filePath from a prevent-read file rule
@@ -56,9 +58,10 @@ type Event struct {
 // Return values:
 //   - allowed=true  — file is not in a prevent-read file rule, or a pass is active
 //   - allowed=false — file is in a prevent-read file rule with no active pass
+//   - notify=true   — the matched rule has notification flags set
 //
 // A nil ReadChecker allows all reads (fail-open).
-type ReadChecker func(filePath, cwd string) (allowed bool, passID string)
+type ReadChecker func(filePath, cwd string) (allowed bool, passID string, notify bool)
 
 // writingTools is the set of tool names that constitute write operations and
 // are subject to file rule enforcement. Non-writing tools are always allowed
@@ -212,7 +215,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 
 	// Reading tools: check against prevent-read file rules.
 	if readingTools[payload.ToolName] {
-		allowed, readPassID := checkRead(rdChecker, filePath, payload.Cwd)
+		allowed, readPassID, notify := checkRead(rdChecker, filePath, payload.Cwd)
 		if !allowed {
 			event := &Event{
 				ToolName:  payload.ToolName,
@@ -220,6 +223,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 				ToolInput: payload.ToolInput,
 				Decision:  DecisionDeny,
 				Cwd:       payload.Cwd,
+				Notify:    notify,
 			}
 			if err := writeDeny(w, errW, payload.ToolName, filePath); err != nil {
 				return nil, err
@@ -233,6 +237,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 			Decision:  DecisionAllow,
 			PassID:    readPassID,
 			Cwd:       payload.Cwd,
+			Notify:    notify,
 		}, nil
 	}
 
@@ -248,7 +253,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 	}
 
 	// Check the file against the policy database (file rules + passes).
-	allowed, passID := checkPolicy(checker, filePath, payload.Cwd)
+	allowed, passID, notify := checkPolicy(checker, filePath, payload.Cwd)
 
 	if allowed {
 		return &Event{
@@ -258,6 +263,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 			Decision:  DecisionAllow,
 			PassID:    passID,
 			Cwd:       payload.Cwd,
+			Notify:    notify,
 		}, nil
 	}
 
@@ -267,6 +273,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		ToolInput: payload.ToolInput,
 		Decision:  DecisionDeny,
 		Cwd:       payload.Cwd,
+		Notify:    notify,
 	}
 	if err := writeDeny(w, errW, payload.ToolName, filePath); err != nil {
 		return nil, err
@@ -301,13 +308,14 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 
 		// Custom rules from the policy database.
 		if cmdChecker != nil {
-			if allowed, matched := cmdChecker(seg, payload.Cwd); !allowed && matched != nil {
+			if allowed, matched, cmdNotify := cmdChecker(seg, payload.Cwd); !allowed && matched != nil {
 				reason := commandRuleDenyReason(matched)
 				event := &Event{
 					ToolName:  payload.ToolName,
 					ToolInput: payload.ToolInput,
 					Decision:  DecisionDeny,
 					Cwd:       payload.Cwd,
+					Notify:    cmdNotify,
 				}
 				if err := encodeClaudeDeny(w, reason); err != nil {
 					return nil, err
@@ -321,7 +329,7 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 	// Check read targets against prevent-read file rules.
 	readTargets := bashReadTargets(command)
 	for _, target := range readTargets {
-		allowed, _ := checkRead(rdChecker, target, payload.Cwd)
+		allowed, _, rdNotify := checkRead(rdChecker, target, payload.Cwd)
 		if !allowed {
 			event := &Event{
 				ToolName:  payload.ToolName,
@@ -329,6 +337,7 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 				ToolInput: payload.ToolInput,
 				Decision:  DecisionDeny,
 				Cwd:       payload.Cwd,
+				Notify:    rdNotify,
 			}
 			reason := readDenyReason(target)
 			if err := encodeClaudeDeny(w, reason); err != nil {
@@ -355,7 +364,7 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 	// Check each target against the policy database. Deny if any target is
 	// covered by a file rule without an active pass. We deny on the first violation found.
 	for _, target := range targets {
-		allowed, _ := checkPolicy(checker, target, payload.Cwd)
+		allowed, _, pNotify := checkPolicy(checker, target, payload.Cwd)
 		if !allowed {
 			primaryTarget := targets[0]
 			event := &Event{
@@ -364,6 +373,7 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 				ToolInput: payload.ToolInput,
 				Decision:  DecisionDeny,
 				Cwd:       payload.Cwd,
+				Notify:    pNotify,
 			}
 			if err := writeBashDeny(w, errW, primaryTarget, targets); err != nil {
 				return nil, err
@@ -399,7 +409,7 @@ func evaluateApplyPatch(payload hookPayload, w io.Writer, errW io.Writer, checke
 	}
 
 	for _, target := range targets {
-		allowed, _ := checkPolicy(checker, target, payload.Cwd)
+		allowed, _, pNotify := checkPolicy(checker, target, payload.Cwd)
 		if !allowed {
 			event := &Event{
 				ToolName:  payload.ToolName,
@@ -407,6 +417,7 @@ func evaluateApplyPatch(payload hookPayload, w io.Writer, errW io.Writer, checke
 				ToolInput: payload.ToolInput,
 				Decision:  DecisionDeny,
 				Cwd:       payload.Cwd,
+				Notify:    pNotify,
 			}
 			if err := writeDeny(w, errW, payload.ToolName, target); err != nil {
 				return nil, err
@@ -459,20 +470,20 @@ func patchFileTargets(toolInput json.RawMessage) []string {
 	return targets
 }
 
-// checkPolicy calls the checker if non-nil, returning (true, "") as the
+// checkPolicy calls the checker if non-nil, returning (true, "", false) as the
 // fail-open default when checker is nil.
-func checkPolicy(checker PolicyChecker, filePath, cwd string) (allowed bool, passID string) {
+func checkPolicy(checker PolicyChecker, filePath, cwd string) (allowed bool, passID string, notify bool) {
 	if checker == nil {
-		return true, ""
+		return true, "", false
 	}
 	return checker(filePath, cwd)
 }
 
-// checkRead calls the ReadChecker if non-nil, returning (true, "") as the
+// checkRead calls the ReadChecker if non-nil, returning (true, "", false) as the
 // fail-open default when rdChecker is nil.
-func checkRead(rdChecker ReadChecker, filePath, cwd string) (allowed bool, passID string) {
+func checkRead(rdChecker ReadChecker, filePath, cwd string) (allowed bool, passID string, notify bool) {
 	if rdChecker == nil {
-		return true, ""
+		return true, "", false
 	}
 	return rdChecker(filePath, cwd)
 }

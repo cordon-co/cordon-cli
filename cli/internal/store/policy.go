@@ -3,6 +3,7 @@ package store
 import (
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -29,16 +30,17 @@ type FileRule struct {
 	ID            string
 	Pattern       string
 	FileType      string // "deny" (blocks access) or "allow" (permits access, overrides deny)
-	FileAuthority string // "standard" (any member) or "guardian" (guardian/admin only)
+	FileAuthority string // "standard" (any member) or "elevated" (elevated/admin only)
 	PreventWrite  bool   // always true for now
 	PreventRead   bool   // opt-in via --prevent-read
 	CreatedBy     string
 	CreatedAt     string // ISO 8601
 	UpdatedAt     string // ISO 8601
+	Notify        bool   // triggers immediate sync when rule is matched
 }
 
 // AddFileRule inserts a new file rule into the policy database.
-// fileAccess is "deny" (default) or "allow". fileAuthority is "standard" or "guardian".
+// fileAccess is "deny" (default) or "allow". fileAuthority is "standard" or "elevated".
 // preventRead enables read enforcement in addition to the always-on write enforcement.
 // Returns an error if the pattern already exists (UNIQUE constraint violation),
 // or if fileAccess is "allow" and preventRead is true (nonsensical combination).
@@ -47,13 +49,33 @@ func AddFileRule(db *sql.DB, pattern, fileAccess, fileAuthority, createdBy strin
 		return nil, fmt.Errorf("store: allow file rules cannot have prevent-read enabled")
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
 	id, err := newUUID()
 	if err != nil {
 		return nil, fmt.Errorf("store: generate file rule id: %w", err)
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
 
-	f := FileRule{
+	payload, _ := json.Marshal(map[string]interface{}{
+		"id":             id,
+		"pattern":        pattern,
+		"file_access":    fileAccess,
+		"file_authority": fileAuthority,
+		"prevent_write":  true,
+		"prevent_read":   preventRead,
+		"created_by":     createdBy,
+		"created_at":     now,
+		"updated_at":     now,
+	})
+
+	_, err = AppendEvent(db, "file_rule.added", string(payload), createdBy)
+	if err != nil {
+		if isDuplicatePatternError(err) {
+			return nil, fmt.Errorf("store: add file rule: %w: %s", ErrDuplicatePattern, pattern)
+		}
+		return nil, fmt.Errorf("store: add file rule: %w", err)
+	}
+
+	return &FileRule{
 		ID:            id,
 		Pattern:       pattern,
 		FileType:      fileAccess,
@@ -63,26 +85,13 @@ func AddFileRule(db *sql.DB, pattern, fileAccess, fileAuthority, createdBy strin
 		CreatedBy:     createdBy,
 		CreatedAt:     now,
 		UpdatedAt:     now,
-	}
-
-	_, err = db.Exec(
-		`INSERT INTO file_rules (id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		f.ID, f.Pattern, f.FileType, f.FileAuthority, f.PreventWrite, f.PreventRead, f.CreatedBy, f.CreatedAt, f.UpdatedAt,
-	)
-	if err != nil {
-		if isDuplicatePatternError(err) {
-			return nil, fmt.Errorf("store: add file rule: %w: %s", ErrDuplicatePattern, pattern)
-		}
-		return nil, fmt.Errorf("store: add file rule: %w", err)
-	}
-	return &f, nil
+	}, nil
 }
 
 // ListFileRules returns all file rules ordered by creation time.
 func ListFileRules(db *sql.DB) ([]FileRule, error) {
 	rows, err := db.Query(
-		`SELECT id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at
+		`SELECT id, pattern, file_access, file_authority, prevent_write, prevent_read, created_by, created_at, updated_at, notify
 		 FROM file_rules ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -93,12 +102,13 @@ func ListFileRules(db *sql.DB) ([]FileRule, error) {
 	var rules []FileRule
 	for rows.Next() {
 		var f FileRule
-		var pw, pr int
-		if err := rows.Scan(&f.ID, &f.Pattern, &f.FileType, &f.FileAuthority, &pw, &pr, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		var pw, pr, nfy int
+		if err := rows.Scan(&f.ID, &f.Pattern, &f.FileType, &f.FileAuthority, &pw, &pr, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt, &nfy); err != nil {
 			return nil, fmt.Errorf("store: scan file rule: %w", err)
 		}
 		f.PreventWrite = pw != 0
 		f.PreventRead = pr != 0
+		f.Notify = nfy != 0
 		rules = append(rules, f)
 	}
 	return rules, rows.Err()
@@ -107,15 +117,26 @@ func ListFileRules(db *sql.DB) ([]FileRule, error) {
 // RemoveFileRule deletes the file rule with the given pattern.
 // Returns (true, nil) if a rule was removed, (false, nil) if no matching rule exists.
 func RemoveFileRule(db *sql.DB, pattern string) (bool, error) {
-	res, err := db.Exec(`DELETE FROM file_rules WHERE pattern = ?`, pattern)
+	// Look up the rule ID needed for the event payload.
+	var id string
+	err := db.QueryRow(`SELECT id FROM file_rules WHERE pattern = ?`, pattern).Scan(&id)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: remove file rule lookup: %w", err)
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"id":      id,
+		"pattern": pattern,
+	})
+
+	_, err = AppendEvent(db, "file_rule.removed", string(payload), CurrentOSUser())
 	if err != nil {
 		return false, fmt.Errorf("store: remove file rule: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("store: remove file rule rows affected: %w", err)
-	}
-	return n > 0, nil
+	return true, nil
 }
 
 // FileRuleForPath returns the effective deny file rule whose pattern covers
