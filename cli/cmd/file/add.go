@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/cordon-co/cordon-cli/cli/internal/codexpolicy"
+	"github.com/cordon-co/cordon-cli/cli/internal/api"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
+	cordsync "github.com/cordon-co/cordon-cli/cli/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -110,12 +111,9 @@ func runFileAdd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Regenerate the Codex policy file.
-	rules, err := store.ListFileRules(policyDB)
-	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not list file rules for Codex policy: %v\n", err)
-	} else if err := codexpolicy.Generate(absRoot, rules); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not regenerate Codex policy: %v\n", err)
+	// Trigger background sync to push the new event immediately.
+	if api.IsLoggedIn() {
+		cordsync.SpawnBackgroundSync(absRoot)
 	}
 
 	if flags.JSON {

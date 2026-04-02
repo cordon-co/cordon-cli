@@ -6,25 +6,6 @@ import (
 	"testing"
 )
 
-func TestComputeHash_Deterministic(t *testing.T) {
-	h1 := computeHash("id1", "file_rule.added", `{"pattern":".env"}`, "alice", "2024-01-01T00:00:00Z", "")
-	h2 := computeHash("id1", "file_rule.added", `{"pattern":".env"}`, "alice", "2024-01-01T00:00:00Z", "")
-	if h1 != h2 {
-		t.Errorf("same inputs produced different hashes: %s vs %s", h1, h2)
-	}
-	if len(h1) != 64 {
-		t.Errorf("hash length = %d, want 64", len(h1))
-	}
-}
-
-func TestComputeHash_DifferentInputs(t *testing.T) {
-	h1 := computeHash("id1", "file_rule.added", `{"pattern":".env"}`, "alice", "2024-01-01T00:00:00Z", "")
-	h2 := computeHash("id2", "file_rule.added", `{"pattern":".env"}`, "alice", "2024-01-01T00:00:00Z", "")
-	if h1 == h2 {
-		t.Error("different event_ids should produce different hashes")
-	}
-}
-
 func TestAppendEvent(t *testing.T) {
 	db := newTestPolicyDB(t)
 
@@ -49,12 +30,6 @@ func TestAppendEvent(t *testing.T) {
 	if ev.EventID == "" {
 		t.Error("expected non-empty event_id")
 	}
-	if ev.ParentHash != "" {
-		t.Errorf("first event should have empty parent_hash, got %q", ev.ParentHash)
-	}
-	if ev.Hash == "" {
-		t.Error("expected non-empty hash")
-	}
 
 	// Verify the projection was updated.
 	rules, err := ListFileRules(db)
@@ -69,7 +44,7 @@ func TestAppendEvent(t *testing.T) {
 	}
 }
 
-func TestAppendMultipleEvents_HashChain(t *testing.T) {
+func TestAppendMultipleEvents(t *testing.T) {
 	db := newTestPolicyDB(t)
 
 	p1, _ := json.Marshal(map[string]interface{}{
@@ -77,7 +52,7 @@ func TestAppendMultipleEvents_HashChain(t *testing.T) {
 		"file_authority": "standard", "prevent_write": true,
 		"prevent_read": false, "created_by": "test",
 	})
-	ev1, err := AppendEvent(db, "file_rule.added", string(p1), "test")
+	_, err := AppendEvent(db, "file_rule.added", string(p1), "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,22 +62,9 @@ func TestAppendMultipleEvents_HashChain(t *testing.T) {
 		"file_authority": "standard", "prevent_write": true,
 		"prevent_read": true, "created_by": "test",
 	})
-	ev2, err := AppendEvent(db, "file_rule.added", string(p2), "test")
+	_, err = AppendEvent(db, "file_rule.added", string(p2), "test")
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	if ev2.ParentHash != ev1.Hash {
-		t.Errorf("ev2.ParentHash = %q, want %q (ev1.Hash)", ev2.ParentHash, ev1.Hash)
-	}
-
-	// Verify chain is valid.
-	broken, err := VerifyChain(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if broken != 0 {
-		t.Errorf("chain broken at seq %d, expected valid", broken)
 	}
 }
 
@@ -167,35 +129,6 @@ func TestReplayEvents_Idempotent(t *testing.T) {
 	}
 }
 
-func TestVerifyChain_TamperedEvent(t *testing.T) {
-	db := newTestPolicyDB(t)
-
-	p1, _ := json.Marshal(map[string]interface{}{
-		"id": "r1", "pattern": ".env", "file_access": "deny",
-		"file_authority": "standard", "prevent_write": true,
-		"prevent_read": false, "created_by": "test",
-	})
-	AppendEvent(db, "file_rule.added", string(p1), "test")
-
-	p2, _ := json.Marshal(map[string]interface{}{
-		"id": "r2", "pattern": "*.pem", "file_access": "deny",
-		"file_authority": "standard", "prevent_write": true,
-		"prevent_read": false, "created_by": "test",
-	})
-	AppendEvent(db, "file_rule.added", string(p2), "test")
-
-	// Tamper with the first event's hash.
-	db.Exec("UPDATE policy_events SET hash = 'tampered' WHERE seq = 1")
-
-	broken, err := VerifyChain(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if broken == 0 {
-		t.Error("expected chain to be broken after tampering")
-	}
-}
-
 func TestListUnpushedEvents(t *testing.T) {
 	db := newTestPolicyDB(t)
 
@@ -244,14 +177,12 @@ func TestAppendRemoteEvents(t *testing.T) {
 
 	serverSeq := int64(1)
 	remoteEv := PolicyEvent{
-		EventID:    "remote-id-1",
-		EventType:  "file_rule.added",
-		Payload:    `{"id":"rr1","pattern":"secrets.json","file_access":"deny","file_authority":"standard","prevent_write":true,"prevent_read":true,"created_by":"admin"}`,
-		Actor:      "admin",
-		Timestamp:  "2024-06-01T00:00:00Z",
-		ParentHash: "",
-		Hash:       computeHash("remote-id-1", "file_rule.added", `{"id":"rr1","pattern":"secrets.json","file_access":"deny","file_authority":"standard","prevent_write":true,"prevent_read":true,"created_by":"admin"}`, "admin", "2024-06-01T00:00:00Z", ""),
-		ServerSeq:  &serverSeq,
+		EventID:   "remote-id-1",
+		EventType: "file_rule.added",
+		Payload:   `{"id":"rr1","pattern":"secrets.json","file_access":"deny","file_authority":"standard","prevent_write":true,"prevent_read":true,"created_by":"admin"}`,
+		Actor:     "admin",
+		Timestamp: "2024-06-01T00:00:00Z",
+		ServerSeq: &serverSeq,
 	}
 
 	if err := AppendRemoteEvents(db, []PolicyEvent{remoteEv}); err != nil {
@@ -261,37 +192,6 @@ func TestAppendRemoteEvents(t *testing.T) {
 	rules, _ := ListFileRules(db)
 	if len(rules) != 1 || rules[0].Pattern != "secrets.json" {
 		t.Errorf("expected 1 file rule (secrets.json), got %v", rules)
-	}
-}
-
-func TestLatestHash_Empty(t *testing.T) {
-	db := newTestPolicyDB(t)
-
-	hash, err := LatestHash(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if hash != "" {
-		t.Errorf("expected empty hash for empty event log, got %q", hash)
-	}
-}
-
-func TestLatestHash_AfterEvent(t *testing.T) {
-	db := newTestPolicyDB(t)
-
-	p1, _ := json.Marshal(map[string]interface{}{
-		"id": "r1", "pattern": ".env", "file_access": "deny",
-		"file_authority": "standard", "prevent_write": true,
-		"prevent_read": false, "created_by": "test",
-	})
-	ev, _ := AppendEvent(db, "file_rule.added", string(p1), "test")
-
-	hash, err := LatestHash(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if hash != ev.Hash {
-		t.Errorf("latest hash = %q, want %q", hash, ev.Hash)
 	}
 }
 
@@ -431,15 +331,6 @@ func TestMigrationFromExistingState(t *testing.T) {
 	db.QueryRow("SELECT COUNT(*) FROM policy_events").Scan(&eventCount)
 	if eventCount != 2 {
 		t.Errorf("expected 2 migration events, got %d", eventCount)
-	}
-
-	// Verify chain is valid.
-	broken, err := VerifyChain(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if broken != 0 {
-		t.Errorf("chain broken at seq %d after migration", broken)
 	}
 
 	// Verify projections still have the original rules.

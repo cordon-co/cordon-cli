@@ -1,15 +1,19 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/cordon-co/cordon-cli/cli/internal/api"
 	"github.com/cordon-co/cordon-cli/cli/internal/hook"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
+	"github.com/cordon-co/cordon-cli/cli/internal/secrets"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
+	cordsync "github.com/cordon-co/cordon-cli/cli/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -33,14 +37,40 @@ var hookCmd = &cobra.Command{
 	Hidden: true, // not shown in help; invoked only by agent hook config
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		action := api.ReadSecretDetectionAction()
+		secretScanner, err := secrets.NewScanner()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cordon: secret detector init failed: %v\n", err)
+			secretScanner = nil
+		}
+
 		checker := buildPolicyChecker()
 		rdChecker := buildReadChecker()
 		cmdChecker := buildCommandChecker()
 		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker, rdChecker, cmdChecker)
+		err = applySecretDetection(event, err, os.Stdout, os.Stderr, secretScanner, action)
 
 		// Log every invocation. Logging failures are non-fatal (fail-open).
 		if event != nil {
 			logHookEvent(event)
+
+			// Trigger background sync for authenticated users.
+			// This is cheap: IsLoggedIn() is a file stat, SyncDue() is a file stat,
+			// SpawnBackgroundSync() is a fork+exec that returns immediately.
+			if absRoot, rootErr := resolveRepoRoot(event.Cwd); rootErr == nil {
+				// Trigger background sync for authenticated users.
+				if api.IsLoggedIn() {
+					if event.Notify || cordsync.SyncDue(absRoot) {
+						cordsync.SpawnBackgroundSync(absRoot)
+					}
+				}
+
+				// Trigger background transcript extraction on every hook with session
+				// data. The flock in the extract command prevents concurrent runs.
+				if event.SessionID != "" && event.TranscriptPath != "" {
+					cordsync.SpawnBackgroundExtract(absRoot)
+				}
+			}
 		}
 
 		if errors.Is(err, hook.ErrDenied) {
@@ -218,21 +248,61 @@ func logHookEvent(event *hook.Event) {
 		return
 	}
 
+	// Prefer the --agent flag when explicitly set (Codex, Gemini, VS Copilot,
+	// OpenCode pass it). For Claude Code and Cursor the flag is intentionally
+	// omitted so Cursor deduplicates to a single hook call; agent identity is
+	// inferred from the payload instead (see hook.inferAgent).
+	agent := event.Agent
+	if hookAgent != "" {
+		agent = hookAgent
+	}
+
 	entry := store.HookLogEntry{
-		Ts:        time.Now().UnixMicro(),
-		ToolName:  event.ToolName,
-		FilePath:  event.FilePath,
-		ToolInput: string(event.ToolInput),
-		Decision:  string(event.Decision),
-		OSUser:    store.CurrentOSUser(),
-		Agent:     hookAgent,
-		PassID:    event.PassID,
-		Notify:    event.Notify,
+		Ts:                   time.Now().UnixMicro(),
+		ToolName:             event.ToolName,
+		FilePath:             store.NormalizeFilePath(event.FilePath, absRoot),
+		ToolInput:            sanitizeRepoPathInJSONStrings(string(event.ToolInput), absRoot),
+		CommandRaw:           sanitizeRepoPathInString(event.CommandRaw, absRoot),
+		CommandParsed:        event.CommandParsed,
+		CommandParseError:    event.CommandParseError,
+		CommandParser:        event.CommandParser,
+		CommandParserVersion: event.CommandParserVersion,
+		CommandOpsJSON:       sanitizeRepoPathInString(event.CommandOpsJSON, absRoot),
+		DeniedOpIndex: func() int {
+			if event.DeniedOpIndex == 0 && event.DeniedOpReason == "" {
+				return -1
+			}
+			return event.DeniedOpIndex
+		}(),
+		DeniedOpReason:     event.DeniedOpReason,
+		MatchedRulePattern: event.MatchedRulePattern,
+		MatchedRuleType:    event.MatchedRuleType,
+		Ambiguity:          event.Ambiguity,
+		Decision:           string(event.Decision),
+		OSUser:             store.CurrentOSUser(),
+		Agent:              agent,
+		PassID:             event.PassID,
+		Notify:             event.Notify,
+		SessionID:          event.SessionID,
+		TranscriptPath:     sanitizeRepoPathInString(event.TranscriptPath, absRoot),
+		SecretsDetected:    event.SecretsDetected,
+		SecretRuleIDs:      encodeRuleIDs(event.SecretRuleIDs),
 	}
 
 	if err := store.InsertHookLog(db, entry); err != nil {
 		fmt.Fprintf(os.Stderr, "cordon: audit log: insert: %v\n", err)
 	}
+}
+
+func encodeRuleIDs(ruleIDs []string) string {
+	if len(ruleIDs) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(ruleIDs)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }
 
 // resolveRepoRoot returns the absolute repo root to use for locating the data

@@ -1,8 +1,11 @@
 package hook
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
+
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // MatchedRule describes a command rule that was matched against a command.
@@ -83,25 +86,44 @@ func commandMatchesBuiltin(command, pattern string) bool {
 // Splits on: &&, ||, ;, and | (pipe).
 // Each segment is trimmed of leading/trailing whitespace.
 func splitCompoundCommand(command string) []string {
-	// Replace all compound operators with a common delimiter.
-	// Process longest tokens first to avoid partial matches.
-	s := command
-	s = strings.ReplaceAll(s, "&&", "\x00")
-	s = strings.ReplaceAll(s, "||", "\x00")
-	s = strings.ReplaceAll(s, ";", "\x00")
-	s = strings.ReplaceAll(s, "|", "\x00")
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return []string{""}
+	}
 
-	parts := strings.Split(s, "\x00")
+	parser := syntax.NewParser(syntax.Variant(syntax.LangBash))
+	file, err := parser.Parse(strings.NewReader(command), "")
+	if err != nil {
+		// Fall back to the raw command if parsing fails.
+		return []string{command}
+	}
+
+	printer := syntax.NewPrinter()
 	var segments []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			segments = append(segments, p)
+	syntax.Walk(file, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok {
+			return true
 		}
-	}
+
+		var buf bytes.Buffer
+		if err := printer.Print(&buf, call); err != nil {
+			return true
+		}
+
+		seg := strings.TrimSpace(buf.String())
+		if seg != "" {
+			segments = append(segments, seg)
+		}
+		return true
+	})
+
 	if len(segments) == 0 {
-		return []string{strings.TrimSpace(command)}
+		// Commands with no call expressions (e.g. bare assignments) still need
+		// to be matched against command rules as a full string.
+		return []string{command}
 	}
+
 	return segments
 }
 

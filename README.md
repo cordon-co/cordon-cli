@@ -29,13 +29,17 @@
 | Agent | Support | Hook Based Enforcement | MCP Elicitation Support |
 |-------|---------|------------------------|-------------------------|
 | <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/claude-color.svg" /> Claude Code | First class | ✓ Yes | ✓ Yes |
+| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/codex-color.svg" /> Codex | First class | ✓ Yes | ✓ Yes |
 | <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/cursor.svg" /> Cursor | First class | ✓ Yes | ✓ Yes |
 | <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/copilot-color.svg" /> VS Code Chat (Copilot) | First class | ✓ Yes | ✓ Yes |
 | <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/gemini-color.svg" /> Gemini CLI | Effective | ✓ Yes | ⤫ No |
 | <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/opencode.svg" /> OpenCode | Effective | ✓ Yes | ⤫ No |
-| <img height="20" src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/codex-color.svg" /> Codex | Limited | ⤫ No | ⤫ No |
 
 ---
+
+> [!NOTE]
+> Upgrading from any version before `v0.6.x` may require deleting `~/.cordon/repos/` and/or `cordon uninstall && cordon init` in a repository to reset legacy databases.
+> Database migrations and installation improvements are to be included from `v0.6.x` onward.
 
 ## Installation
 

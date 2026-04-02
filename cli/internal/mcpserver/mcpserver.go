@@ -65,8 +65,8 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 
 		reason, _ := req.RequireString("reason")
 
-		// Normalise to repo-relative so it matches how file rule patterns are stored.
-		filePath := store.NormalizePattern(rawPath, absRoot)
+		// Normalize to canonical repo-relative form when possible.
+		filePath := store.NormalizeFilePath(rawPath, absRoot)
 
 		// Open the policy database and look up the covering file rule.
 		policyDB, err := store.OpenPolicyDB(absRoot)

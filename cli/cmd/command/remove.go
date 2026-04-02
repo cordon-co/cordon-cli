@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/cordon-co/cordon-cli/cli/internal/api"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
+	cordsync "github.com/cordon-co/cordon-cli/cli/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -72,6 +74,11 @@ func runCommandRemove(cmd *cobra.Command, args []string) error {
 				})
 			}
 		}
+	}
+
+	// Trigger background sync to push the new event immediately.
+	if removed && api.IsLoggedIn() {
+		cordsync.SpawnBackgroundSync(absRoot)
 	}
 
 	if flags.JSON {

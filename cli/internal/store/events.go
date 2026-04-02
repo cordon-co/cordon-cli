@@ -1,7 +1,6 @@
 package store
 
 import (
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -11,22 +10,13 @@ import (
 
 // PolicyEvent is an immutable record of a policy mutation.
 type PolicyEvent struct {
-	Seq        int64  // local auto-increment
-	EventID    string // UUID v4
-	EventType  string // "file_rule.added", "file_rule.removed", etc.
-	Payload    string // JSON blob
-	Actor      string // GitHub username or OS username
-	Timestamp  string // ISO 8601
-	ParentHash string // hash of previous event
-	Hash       string // SHA-256 of this event's fields
-	ServerSeq  *int64 // nil until server acknowledges
-}
-
-// computeHash computes the SHA-256 hash for an event given its fields and parent hash.
-func computeHash(eventID, eventType, payload, actor, timestamp, parentHash string) string {
-	data := eventID + "|" + eventType + "|" + payload + "|" + actor + "|" + timestamp + "|" + parentHash
-	h := sha256.Sum256([]byte(data))
-	return fmt.Sprintf("%x", h[:])
+	Seq       int64  `json:"-"`                    // local auto-increment; not sent to server
+	EventID   string `json:"event_id"`             // UUID v4
+	EventType string `json:"event_type"`           // "file_rule.added", "file_rule.removed", etc.
+	Payload   string `json:"payload"`              // JSON blob
+	Actor     string `json:"actor"`                // GitHub username or OS username
+	Timestamp string `json:"timestamp"`            // ISO 8601
+	ServerSeq *int64 `json:"server_seq,omitempty"` // nil until server acknowledges
 }
 
 // AppendEvent writes a policy event and applies it to the projection tables
@@ -52,35 +42,25 @@ func AppendEvent(db *sql.DB, eventType, payload, actor string) (*PolicyEvent, er
 // appendEventTx is the internal version that works within an existing transaction.
 // If applyProjection is true, it also applies the event to the projection tables.
 func appendEventTx(tx *sql.Tx, eventType, payload, actor string, applyProjection bool) (*PolicyEvent, error) {
-	// Read latest hash for parent_hash.
-	var parentHash string
-	err := tx.QueryRow("SELECT hash FROM policy_events ORDER BY seq DESC LIMIT 1").Scan(&parentHash)
-	if err != nil && err != sql.ErrNoRows {
-		return nil, fmt.Errorf("store: read latest hash: %w", err)
-	}
-
 	eventID, err := newUUID()
 	if err != nil {
 		return nil, fmt.Errorf("store: generate event id: %w", err)
 	}
 
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	hash := computeHash(eventID, eventType, payload, actor, timestamp, parentHash)
 
 	ev := &PolicyEvent{
-		EventID:    eventID,
-		EventType:  eventType,
-		Payload:    payload,
-		Actor:      actor,
-		Timestamp:  timestamp,
-		ParentHash: parentHash,
-		Hash:       hash,
+		EventID:   eventID,
+		EventType: eventType,
+		Payload:   payload,
+		Actor:     actor,
+		Timestamp: timestamp,
 	}
 
 	res, err := tx.Exec(
-		`INSERT INTO policy_events (event_id, event_type, payload, actor, timestamp, parent_hash, hash)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		ev.EventID, ev.EventType, ev.Payload, ev.Actor, ev.Timestamp, ev.ParentHash, ev.Hash,
+		`INSERT INTO policy_events (event_id, event_type, payload, actor, timestamp)
+		 VALUES (?, ?, ?, ?, ?)`,
+		ev.EventID, ev.EventType, ev.Payload, ev.Actor, ev.Timestamp,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: insert event: %w", err)
@@ -266,7 +246,7 @@ func ReplayEvents(db *sql.DB) error {
 		return fmt.Errorf("store: clear command_rules: %w", err)
 	}
 
-	rows, err := tx.Query(`SELECT seq, event_id, event_type, payload, actor, timestamp, parent_hash, hash, server_seq
+	rows, err := tx.Query(`SELECT seq, event_id, event_type, payload, actor, timestamp, server_seq
 		FROM policy_events ORDER BY seq ASC`)
 	if err != nil {
 		return fmt.Errorf("store: query events for replay: %w", err)
@@ -276,7 +256,7 @@ func ReplayEvents(db *sql.DB) error {
 	for rows.Next() {
 		var ev PolicyEvent
 		if err := rows.Scan(&ev.Seq, &ev.EventID, &ev.EventType, &ev.Payload, &ev.Actor,
-			&ev.Timestamp, &ev.ParentHash, &ev.Hash, &ev.ServerSeq); err != nil {
+			&ev.Timestamp, &ev.ServerSeq); err != nil {
 			return fmt.Errorf("store: scan event: %w", err)
 		}
 		if err := applyEventToProjectionReplay(tx, &ev); err != nil {
@@ -374,7 +354,7 @@ func applyCommandRuleAddedReplay(tx *sql.Tx, payload string) error {
 // ListUnpushedEvents returns all events where server_seq IS NULL, ordered by seq ASC.
 func ListUnpushedEvents(db *sql.DB) ([]PolicyEvent, error) {
 	rows, err := db.Query(
-		`SELECT seq, event_id, event_type, payload, actor, timestamp, parent_hash, hash, server_seq
+		`SELECT seq, event_id, event_type, payload, actor, timestamp, server_seq
 		 FROM policy_events WHERE server_seq IS NULL ORDER BY seq ASC`,
 	)
 	if err != nil {
@@ -419,9 +399,9 @@ func AppendRemoteEvents(db *sql.DB, events []PolicyEvent) error {
 
 	for _, ev := range events {
 		_, err := tx.Exec(
-			`INSERT INTO policy_events (event_id, event_type, payload, actor, timestamp, parent_hash, hash, server_seq)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			ev.EventID, ev.EventType, ev.Payload, ev.Actor, ev.Timestamp, ev.ParentHash, ev.Hash, ev.ServerSeq,
+			`INSERT INTO policy_events (event_id, event_type, payload, actor, timestamp, server_seq)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			ev.EventID, ev.EventType, ev.Payload, ev.Actor, ev.Timestamp, ev.ServerSeq,
 		)
 		if err != nil {
 			return fmt.Errorf("store: insert remote event %s: %w", ev.EventID, err)
@@ -436,7 +416,7 @@ func AppendRemoteEvents(db *sql.DB, events []PolicyEvent) error {
 		return fmt.Errorf("store: clear command_rules for rebuild: %w", err)
 	}
 
-	rows, err := tx.Query(`SELECT seq, event_id, event_type, payload, actor, timestamp, parent_hash, hash, server_seq
+	rows, err := tx.Query(`SELECT seq, event_id, event_type, payload, actor, timestamp, server_seq
 		FROM policy_events ORDER BY seq ASC`)
 	if err != nil {
 		return fmt.Errorf("store: query events for rebuild: %w", err)
@@ -446,7 +426,7 @@ func AppendRemoteEvents(db *sql.DB, events []PolicyEvent) error {
 	for rows.Next() {
 		var ev PolicyEvent
 		if err := rows.Scan(&ev.Seq, &ev.EventID, &ev.EventType, &ev.Payload, &ev.Actor,
-			&ev.Timestamp, &ev.ParentHash, &ev.Hash, &ev.ServerSeq); err != nil {
+			&ev.Timestamp, &ev.ServerSeq); err != nil {
 			return fmt.Errorf("store: scan event for rebuild: %w", err)
 		}
 		if err := applyEventToProjectionReplay(tx, &ev); err != nil {
@@ -460,63 +440,13 @@ func AppendRemoteEvents(db *sql.DB, events []PolicyEvent) error {
 	return tx.Commit()
 }
 
-// LatestHash returns the hash of the most recent event, or "" if no events exist.
-func LatestHash(db *sql.DB) (string, error) {
-	var hash string
-	err := db.QueryRow("SELECT hash FROM policy_events ORDER BY seq DESC LIMIT 1").Scan(&hash)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("store: latest hash: %w", err)
-	}
-	return hash, nil
-}
-
-// VerifyChain walks the full event log and verifies that every event's parent_hash
-// matches the previous event's hash, and that each hash is correctly computed.
-// Returns the seq of the first broken link, or 0 if the chain is valid.
-func VerifyChain(db *sql.DB) (int64, error) {
-	rows, err := db.Query(
-		`SELECT seq, event_id, event_type, payload, actor, timestamp, parent_hash, hash
-		 FROM policy_events ORDER BY seq ASC`,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("store: verify chain query: %w", err)
-	}
-	defer rows.Close()
-
-	var prevHash string
-	for rows.Next() {
-		var ev PolicyEvent
-		if err := rows.Scan(&ev.Seq, &ev.EventID, &ev.EventType, &ev.Payload, &ev.Actor,
-			&ev.Timestamp, &ev.ParentHash, &ev.Hash); err != nil {
-			return 0, fmt.Errorf("store: verify chain scan: %w", err)
-		}
-
-		// Check parent_hash linkage.
-		if ev.ParentHash != prevHash {
-			return ev.Seq, nil
-		}
-
-		// Check hash computation.
-		expected := computeHash(ev.EventID, ev.EventType, ev.Payload, ev.Actor, ev.Timestamp, ev.ParentHash)
-		if ev.Hash != expected {
-			return ev.Seq, nil
-		}
-
-		prevHash = ev.Hash
-	}
-	return 0, rows.Err()
-}
-
 // scanEvents reads all rows from a policy_events query into a slice.
 func scanEvents(rows *sql.Rows) ([]PolicyEvent, error) {
 	var events []PolicyEvent
 	for rows.Next() {
 		var ev PolicyEvent
 		if err := rows.Scan(&ev.Seq, &ev.EventID, &ev.EventType, &ev.Payload, &ev.Actor,
-			&ev.Timestamp, &ev.ParentHash, &ev.Hash, &ev.ServerSeq); err != nil {
+			&ev.Timestamp, &ev.ServerSeq); err != nil {
 			return nil, fmt.Errorf("store: scan event: %w", err)
 		}
 		events = append(events, ev)

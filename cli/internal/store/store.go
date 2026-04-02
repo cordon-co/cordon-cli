@@ -32,9 +32,11 @@ func OpenPolicyDB(absRepoRoot string) (*sql.DB, error) {
 		return nil, fmt.Errorf("store: open policy.db: %w", err)
 	}
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+	db.SetMaxOpenConns(1)
+
+	if _, err := db.Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("store: set WAL mode on policy.db: %w", err)
+		return nil, fmt.Errorf("store: set pragmas on policy.db: %w", err)
 	}
 
 	return db, nil
@@ -60,9 +62,11 @@ func OpenDataDB(absRepoRoot string) (*sql.DB, error) {
 		return nil, fmt.Errorf("store: open data.db: %w", err)
 	}
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+	db.SetMaxOpenConns(1)
+
+	if _, err := db.Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("store: set WAL mode on data.db: %w", err)
+		return nil, fmt.Errorf("store: set pragmas on data.db: %w", err)
 	}
 
 	return db, nil
@@ -106,6 +110,11 @@ func ReadPerimeterID(absRepoRoot string) (string, error) {
 		return "", fmt.Errorf("open policy.db: %w", err)
 	}
 	defer db.Close()
+
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+		return "", fmt.Errorf("set busy_timeout on policy.db: %w", err)
+	}
 
 	return GetPerimeterID(db)
 }
@@ -211,6 +220,9 @@ func HasPerimeterID(dbPath string) bool {
 		return false
 	}
 	defer db.Close()
+
+	db.SetMaxOpenConns(1)
+	db.Exec("PRAGMA busy_timeout=5000;") //nolint: read-only, best-effort
 
 	var id string
 	err = db.QueryRow(`SELECT value FROM perimeter_meta WHERE key = 'perimeter_id'`).Scan(&id)

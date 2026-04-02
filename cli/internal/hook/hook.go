@@ -43,13 +43,29 @@ type PolicyChecker func(filePath, cwd string) (allowed bool, passID string, noti
 // Event is returned by Evaluate for every tool invocation (writing or not).
 // It carries all fields needed for audit logging.
 type Event struct {
-	ToolName  string
-	FilePath  string          // may be empty for tools with no file path (e.g. Bash)
-	ToolInput json.RawMessage // full raw tool_input JSON from the hook payload
-	Decision  Decision
-	PassID    string // non-empty if write was allowed via an active pass
-	Cwd       string // cwd from the hook payload; used by the logger for DB path discovery
-	Notify    bool   // rule had notification flags — triggers immediate background sync
+	ToolName             string
+	FilePath             string          // may be empty for tools with no file path (e.g. Bash)
+	ToolInput            json.RawMessage // full raw tool_input JSON from the hook payload
+	CommandRaw           string
+	CommandParsed        bool
+	CommandParseError    string
+	CommandParser        string
+	CommandParserVersion string
+	CommandOpsJSON       string
+	DeniedOpIndex        int
+	DeniedOpReason       string
+	MatchedRulePattern   string
+	MatchedRuleType      string
+	Ambiguity            string
+	Decision             Decision
+	PassID               string // non-empty if write was allowed via an active pass
+	Cwd                  string // cwd from the hook payload; used by the logger for DB path discovery
+	Notify               bool   // rule had notification flags — triggers immediate background sync
+	Agent                string // detected agent platform (see inferAgent)
+	SessionID            string // agent session identifier
+	TranscriptPath       string // path to session transcript (or conversation_id for Cursor)
+	SecretsDetected      bool   // true when one or more gitleaks findings were detected
+	SecretRuleIDs        []string
 }
 
 // ReadChecker checks whether a read of filePath from a prevent-read file rule
@@ -124,24 +140,51 @@ var copilotTools = map[string]bool{
 	"read_file":       true,
 }
 
-// hookPayload is the JSON structure sent by Claude Code via stdin.
-// Claude Code also sends session_id, transcript_path, hook_event_name, etc.;
-// those fields are ignored here (unknown fields are discarded by encoding/json).
+// hookPayload is the JSON structure sent by agents via stdin.
 type hookPayload struct {
-	ToolName  string          `json:"tool_name"`
-	ToolInput json.RawMessage `json:"tool_input"`
-	Cwd       string          `json:"cwd"` // agent working directory; equals repo root
+	ToolName       string          `json:"tool_name"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+	Cwd            string          `json:"cwd"`             // agent working directory; equals repo root
+	SessionID      string          `json:"session_id"`      // agent session identifier
+	TranscriptPath string          `json:"transcript_path"` // path to session transcript
+	ConversationID string          `json:"conversation_id"` // Cursor uses this instead of transcript_path
 }
 
 // toolInputPath extracts the file path from a tool's input JSON.
 // Different agents use different field names for the target file path.
 type toolInputPath struct {
-	FilePath     string `json:"file_path"`   // Claude Code (Write, Edit, etc.)
-	FilePathCC   string `json:"filePath"`    // VS Code Copilot (read_file, etc.)
-	Path         string `json:"path"`        // generic fallback
-	Filename     string `json:"filename"`    // VS Code Copilot (create_file, etc.)
-	Destination  string `json:"destination"` // VS Code Copilot (moveFile, renameFile)
-	NewPath      string `json:"newPath"`     // VS Code Copilot (renameFile variant)
+	FilePath    string `json:"file_path"`   // Claude Code (Write, Edit, etc.)
+	FilePathCC  string `json:"filePath"`    // VS Code Copilot (read_file, etc.)
+	Path        string `json:"path"`        // generic fallback
+	Filename    string `json:"filename"`    // VS Code Copilot (create_file, etc.)
+	Destination string `json:"destination"` // VS Code Copilot (moveFile, renameFile)
+	NewPath     string `json:"newPath"`     // VS Code Copilot (renameFile variant)
+}
+
+// setSession stamps the session tracking and agent fields from the payload onto the event.
+func (p hookPayload) setSession(e *Event) {
+	e.Agent = p.inferAgent()
+	e.SessionID = p.SessionID
+	e.TranscriptPath = p.TranscriptPath
+}
+
+// inferAgent determines the agent platform from the hook payload.
+//
+// Cursor and Claude Code both load .claude/settings.local.json hooks, so
+// the hook command is intentionally the same ("cordon hook" with no --agent
+// flag) to let Cursor deduplicate into a single invocation. Instead of
+// relying on the flag, we distinguish agents by payload shape:
+//   - Cursor sends conversation_id (normalised to SessionID above)
+//     but never sends transcript_path.
+//   - Claude Code sends session_id and transcript_path.
+//
+// For agents that do pass --agent (Codex, Gemini, VS Copilot, OpenCode),
+// cmd/hook.go will override this value with the flag.
+func (p hookPayload) inferAgent() string {
+	if p.ConversationID != "" {
+		return "cursor"
+	}
+	return "claude-code"
 }
 
 func (t toolInputPath) effectivePath() string {
@@ -195,14 +238,29 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		return nil, fmt.Errorf("hook: parse payload: %w", err)
 	}
 
-	// Bash tool: check whether the command targets any files via shell write patterns.
-	if payload.ToolName == "Bash" || payload.ToolName == "bash" {
-		return evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker)
+	// Cursor sends conversation_id (a UUID) as its session identifier
+	// instead of session_id. Normalise it so downstream code only deals
+	// with two canonical fields.
+	if payload.SessionID == "" && payload.ConversationID != "" {
+		payload.SessionID = payload.ConversationID
+	}
+
+	// Shell command tools: check command rules and shell read/write targets.
+	if isShellCommandTool(payload.ToolName) {
+		event, err := evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker)
+		if event != nil {
+			payload.setSession(event)
+		}
+		return event, err
 	}
 
 	// apply_patch: file paths are embedded in the patch body, potentially multiple.
 	if payload.ToolName == "apply_patch" {
-		return evaluateApplyPatch(payload, w, errW, checker)
+		event, err := evaluateApplyPatch(payload, w, errW, checker)
+		if event != nil {
+			payload.setSession(event)
+		}
+		return event, err
 	}
 
 	// Extract the file path; tolerate missing/non-path tools gracefully.
@@ -213,17 +271,24 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 	}
 	filePath := inp.effectivePath()
 
+	agent := payload.inferAgent()
+
 	// Reading tools: check against prevent-read file rules.
 	if readingTools[payload.ToolName] {
 		allowed, readPassID, notify := checkRead(rdChecker, filePath, payload.Cwd)
 		if !allowed {
 			event := &Event{
-				ToolName:  payload.ToolName,
-				FilePath:  filePath,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
-				Notify:    notify,
+				ToolName:       payload.ToolName,
+				FilePath:       filePath,
+				ToolInput:      payload.ToolInput,
+				DeniedOpIndex:  -1,
+				DeniedOpReason: denyOpReasonForTool(payload.ToolName),
+				Decision:       DecisionDeny,
+				Cwd:            payload.Cwd,
+				Notify:         notify,
+				Agent:          agent,
+				SessionID:      payload.SessionID,
+				TranscriptPath: payload.TranscriptPath,
 			}
 			if err := writeDeny(w, errW, payload.ToolName, filePath); err != nil {
 				return nil, err
@@ -231,24 +296,30 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 			return event, ErrDenied
 		}
 		return &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  filePath,
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionAllow,
-			PassID:    readPassID,
-			Cwd:       payload.Cwd,
-			Notify:    notify,
+			ToolName:       payload.ToolName,
+			FilePath:       filePath,
+			ToolInput:      payload.ToolInput,
+			Decision:       DecisionAllow,
+			PassID:         readPassID,
+			Cwd:            payload.Cwd,
+			Notify:         notify,
+			Agent:          agent,
+			SessionID:      payload.SessionID,
+			TranscriptPath: payload.TranscriptPath,
 		}, nil
 	}
 
 	// Non-writing tools: allow and log; no deny response.
 	if !writingTools[payload.ToolName] {
 		return &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  filePath,
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionAllow,
-			Cwd:       payload.Cwd,
+			ToolName:       payload.ToolName,
+			FilePath:       filePath,
+			ToolInput:      payload.ToolInput,
+			Decision:       DecisionAllow,
+			Cwd:            payload.Cwd,
+			Agent:          agent,
+			SessionID:      payload.SessionID,
+			TranscriptPath: payload.TranscriptPath,
 		}, nil
 	}
 
@@ -257,23 +328,31 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 
 	if allowed {
 		return &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  filePath,
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionAllow,
-			PassID:    passID,
-			Cwd:       payload.Cwd,
-			Notify:    notify,
+			ToolName:       payload.ToolName,
+			FilePath:       filePath,
+			ToolInput:      payload.ToolInput,
+			Decision:       DecisionAllow,
+			PassID:         passID,
+			Cwd:            payload.Cwd,
+			Notify:         notify,
+			Agent:          agent,
+			SessionID:      payload.SessionID,
+			TranscriptPath: payload.TranscriptPath,
 		}, nil
 	}
 
 	event := &Event{
-		ToolName:  payload.ToolName,
-		FilePath:  filePath,
-		ToolInput: payload.ToolInput,
-		Decision:  DecisionDeny,
-		Cwd:       payload.Cwd,
-		Notify:    notify,
+		ToolName:       payload.ToolName,
+		FilePath:       filePath,
+		ToolInput:      payload.ToolInput,
+		DeniedOpIndex:  -1,
+		DeniedOpReason: denyOpReasonForTool(payload.ToolName),
+		Decision:       DecisionDeny,
+		Cwd:            payload.Cwd,
+		Notify:         notify,
+		Agent:          agent,
+		SessionID:      payload.SessionID,
+		TranscriptPath: payload.TranscriptPath,
 	}
 	if err := writeDeny(w, errW, payload.ToolName, filePath); err != nil {
 		return nil, err
@@ -286,18 +365,29 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 // detected the command is denied; otherwise it is allowed and logged.
 func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker, rdChecker ReadChecker, cmdChecker CommandChecker) (*Event, error) {
 	command := parseBashToolInput(payload.ToolInput)
+	analysis := analyzeShellCommand(command, payload.Cwd)
 
 	// Check each segment of the command against built-in and custom command rules.
-	segments := splitCompoundCommand(command)
-	for _, seg := range segments {
+	for i, seg := range analysis.Commands {
 		// Built-in rules are always checked (no DB needed).
 		if matched := CheckBuiltinRules(seg); matched != nil {
 			reason := commandRuleDenyReason(matched)
 			event := &Event{
-				ToolName:  payload.ToolName,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
+				ToolName:             payload.ToolName,
+				ToolInput:            payload.ToolInput,
+				CommandRaw:           analysis.CommandRaw,
+				CommandParsed:        analysis.ParsedOK,
+				CommandParseError:    analysis.ParseError,
+				CommandParser:        analysis.Parser,
+				CommandParserVersion: analysis.ParserVersion,
+				CommandOpsJSON:       analysis.opsJSON(),
+				DeniedOpIndex:        i,
+				DeniedOpReason:       "prevent-command rule violation",
+				MatchedRulePattern:   matched.Pattern,
+				MatchedRuleType:      matched.RuleType,
+				Ambiguity:            analysis.ambiguityText(),
+				Decision:             DecisionDeny,
+				Cwd:                  payload.Cwd,
 			}
 			if err := encodeClaudeDeny(w, reason); err != nil {
 				return nil, err
@@ -311,11 +401,22 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 			if allowed, matched, cmdNotify := cmdChecker(seg, payload.Cwd); !allowed && matched != nil {
 				reason := commandRuleDenyReason(matched)
 				event := &Event{
-					ToolName:  payload.ToolName,
-					ToolInput: payload.ToolInput,
-					Decision:  DecisionDeny,
-					Cwd:       payload.Cwd,
-					Notify:    cmdNotify,
+					ToolName:             payload.ToolName,
+					ToolInput:            payload.ToolInput,
+					CommandRaw:           analysis.CommandRaw,
+					CommandParsed:        analysis.ParsedOK,
+					CommandParseError:    analysis.ParseError,
+					CommandParser:        analysis.Parser,
+					CommandParserVersion: analysis.ParserVersion,
+					CommandOpsJSON:       analysis.opsJSON(),
+					DeniedOpIndex:        i,
+					DeniedOpReason:       "prevent-command rule violation",
+					MatchedRulePattern:   matched.Pattern,
+					MatchedRuleType:      matched.RuleType,
+					Ambiguity:            analysis.ambiguityText(),
+					Decision:             DecisionDeny,
+					Cwd:                  payload.Cwd,
+					Notify:               cmdNotify,
 				}
 				if err := encodeClaudeDeny(w, reason); err != nil {
 					return nil, err
@@ -326,20 +427,31 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 		}
 	}
 
-	// Check read targets against prevent-read file rules.
-	readTargets := bashReadTargets(command)
-	for _, target := range readTargets {
-		allowed, _, rdNotify := checkRead(rdChecker, target, payload.Cwd)
+	// Check read operations against prevent-read file rules.
+	for i, op := range analysis.Ops {
+		if op.Type != shellOpRead || op.Path == "" {
+			continue
+		}
+		allowed, _, rdNotify := checkRead(rdChecker, op.Path, payload.Cwd)
 		if !allowed {
 			event := &Event{
-				ToolName:  payload.ToolName,
-				FilePath:  target,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
-				Notify:    rdNotify,
+				ToolName:             payload.ToolName,
+				FilePath:             op.Path,
+				ToolInput:            payload.ToolInput,
+				CommandRaw:           analysis.CommandRaw,
+				CommandParsed:        analysis.ParsedOK,
+				CommandParseError:    analysis.ParseError,
+				CommandParser:        analysis.Parser,
+				CommandParserVersion: analysis.ParserVersion,
+				CommandOpsJSON:       analysis.opsJSON(),
+				DeniedOpIndex:        i,
+				DeniedOpReason:       "prevent-read rule violation",
+				Ambiguity:            analysis.ambiguityText(),
+				Decision:             DecisionDeny,
+				Cwd:                  payload.Cwd,
+				Notify:               rdNotify,
 			}
-			reason := readDenyReason(target)
+			reason := readDenyReason(op.Path)
 			if err := encodeClaudeDeny(w, reason); err != nil {
 				return nil, err
 			}
@@ -348,34 +460,56 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 		}
 	}
 
-	targets := bashWriteTargets(command)
+	var mutationTargets []string
+	for _, op := range analysis.Ops {
+		if op.Type == shellOpMutation && op.Path != "" {
+			mutationTargets = append(mutationTargets, op.Path)
+		}
+	}
 
 	// No write pattern detected — allow.
-	if len(targets) == 0 {
+	if len(mutationTargets) == 0 {
 		return &Event{
-			ToolName:  payload.ToolName,
-			FilePath:  "",
-			ToolInput: payload.ToolInput,
-			Decision:  DecisionAllow,
-			Cwd:       payload.Cwd,
+			ToolName:             payload.ToolName,
+			FilePath:             "",
+			ToolInput:            payload.ToolInput,
+			CommandRaw:           analysis.CommandRaw,
+			CommandParsed:        analysis.ParsedOK,
+			CommandParseError:    analysis.ParseError,
+			CommandParser:        analysis.Parser,
+			CommandParserVersion: analysis.ParserVersion,
+			CommandOpsJSON:       analysis.opsJSON(),
+			DeniedOpIndex:        -1,
+			Ambiguity:            analysis.ambiguityText(),
+			Decision:             DecisionAllow,
+			Cwd:                  payload.Cwd,
 		}, nil
 	}
 
 	// Check each target against the policy database. Deny if any target is
 	// covered by a file rule without an active pass. We deny on the first violation found.
-	for _, target := range targets {
+	for i, target := range mutationTargets {
 		allowed, _, pNotify := checkPolicy(checker, target, payload.Cwd)
 		if !allowed {
-			primaryTarget := targets[0]
+			primaryTarget := mutationTargets[0]
 			event := &Event{
-				ToolName:  payload.ToolName,
-				FilePath:  primaryTarget,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
-				Notify:    pNotify,
+				ToolName:             payload.ToolName,
+				FilePath:             primaryTarget,
+				ToolInput:            payload.ToolInput,
+				CommandRaw:           analysis.CommandRaw,
+				CommandParsed:        analysis.ParsedOK,
+				CommandParseError:    analysis.ParseError,
+				CommandParser:        analysis.Parser,
+				CommandParserVersion: analysis.ParserVersion,
+				CommandOpsJSON:       analysis.opsJSON(),
+				DeniedOpIndex:        i,
+				DeniedOpReason:       "prevent-write rule violation",
+				Ambiguity:            analysis.ambiguityText(),
+				Decision:             DecisionDeny,
+				Cwd:                  payload.Cwd,
+				Notify:               pNotify,
 			}
-			if err := writeBashDeny(w, errW, primaryTarget, targets); err != nil {
+			if err := writeBashDeny(w, errW, primaryTarget, mutationTargets); err != nil {
 				return nil, err
 			}
 			return event, ErrDenied
@@ -384,12 +518,29 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 
 	// All targets are clear — allow.
 	return &Event{
-		ToolName:  payload.ToolName,
-		FilePath:  targets[0],
-		ToolInput: payload.ToolInput,
-		Decision:  DecisionAllow,
-		Cwd:       payload.Cwd,
+		ToolName:             payload.ToolName,
+		FilePath:             mutationTargets[0],
+		ToolInput:            payload.ToolInput,
+		CommandRaw:           analysis.CommandRaw,
+		CommandParsed:        analysis.ParsedOK,
+		CommandParseError:    analysis.ParseError,
+		CommandParser:        analysis.Parser,
+		CommandParserVersion: analysis.ParserVersion,
+		CommandOpsJSON:       analysis.opsJSON(),
+		DeniedOpIndex:        -1,
+		Ambiguity:            analysis.ambiguityText(),
+		Decision:             DecisionAllow,
+		Cwd:                  payload.Cwd,
 	}, nil
+}
+
+func isShellCommandTool(toolName string) bool {
+	switch strings.ToLower(strings.TrimSpace(toolName)) {
+	case "bash", "run_in_terminal":
+		return true
+	default:
+		return false
+	}
 }
 
 // evaluateApplyPatch handles VS Code Copilot's apply_patch tool.
@@ -412,12 +563,14 @@ func evaluateApplyPatch(payload hookPayload, w io.Writer, errW io.Writer, checke
 		allowed, _, pNotify := checkPolicy(checker, target, payload.Cwd)
 		if !allowed {
 			event := &Event{
-				ToolName:  payload.ToolName,
-				FilePath:  target,
-				ToolInput: payload.ToolInput,
-				Decision:  DecisionDeny,
-				Cwd:       payload.Cwd,
-				Notify:    pNotify,
+				ToolName:       payload.ToolName,
+				FilePath:       target,
+				ToolInput:      payload.ToolInput,
+				DeniedOpIndex:  -1,
+				DeniedOpReason: denyOpReasonForTool(payload.ToolName),
+				Decision:       DecisionDeny,
+				Cwd:            payload.Cwd,
+				Notify:         pNotify,
 			}
 			if err := writeDeny(w, errW, payload.ToolName, target); err != nil {
 				return nil, err
@@ -498,9 +651,10 @@ func readDenyReason(path string) string {
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request read access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
-			"Do not attempt to read this file through any alternative method, "+
-			"including shell commands such as cat, tail, head, less, or grep. "+
-			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"If the user says they have issued the pass, you may proceed with accessing the file. "+
+			"Do not attempt to write to this file through any alternative method, "+
+			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You should use the MCP or ask the user for a pass. "+
 			"This is an enforced policy restriction, not a technical error. ",
 		path,
 	)
@@ -515,9 +669,10 @@ func policyDenyReason(path string) string {
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
+			"If the user says they have issued the pass, you may proceed with accessing the file. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
-			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You should use the MCP or ask the user for a pass. "+
 			"This is an enforced policy restriction, not a technical error. ",
 		path,
 	)
@@ -532,38 +687,50 @@ func policyBashDenyReason(primary string, all []string) string {
 	}
 	return fmt.Sprintf(
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
-			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
+			"To request access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
 			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
+			"If the user says they have issued the pass, you may proceed with accessing the file. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
-			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You must use the MCP "+
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You should use the MCP or ask the user for a pass. "+
 			"This is an enforced policy restriction, not a technical error. ",
 		target,
 	)
 }
 
 func writeDeny(w io.Writer, errW io.Writer, toolName, path string) error {
-	var reason string
+	reason := denyReasonForTool(toolName, path)
+	return WriteCustomDeny(w, errW, toolName, reason)
+}
+
+func denyReasonForTool(toolName, path string) string {
 	if readingTools[toolName] {
-		reason = readDenyReason(path)
-	} else {
-		reason = policyDenyReason(path)
+		return readDenyReason(path)
 	}
-	if err := encodeClaudeDeny(w, reason); err != nil {
-		return err
+	return policyDenyReason(path)
+}
+
+func denyOpReasonForTool(toolName string) string {
+	if readingTools[toolName] {
+		return "prevent-read rule violation"
 	}
-	if copilotTools[toolName] {
-		writeCopilotDeny(errW, reason)
-	}
-	return nil
+	return "prevent-write rule violation"
 }
 
 func writeBashDeny(w io.Writer, errW io.Writer, primary string, all []string) error {
 	reason := policyBashDenyReason(primary, all)
+	return WriteCustomDeny(w, errW, "Bash", reason)
+}
+
+// WriteCustomDeny writes a deny response with a custom reason while preserving
+// agent-specific deny response behavior.
+func WriteCustomDeny(w io.Writer, errW io.Writer, toolName, reason string) error {
 	if err := encodeClaudeDeny(w, reason); err != nil {
 		return err
 	}
-	fmt.Fprintf(errW, "%s\n", reason)
+	if copilotTools[toolName] || isShellCommandTool(toolName) {
+		writeCopilotDeny(errW, reason)
+	}
 	return nil
 }
 
@@ -584,4 +751,3 @@ func encodeClaudeDeny(w io.Writer, reason string) error {
 func writeCopilotDeny(errW io.Writer, reason string) {
 	fmt.Fprintf(errW, "%s\n", reason)
 }
-

@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/cordon-co/cordon-cli/cli/cmd/auth"
 	"github.com/cordon-co/cordon-cli/cli/cmd/command"
 	"github.com/cordon-co/cordon-cli/cli/cmd/pass"
 	"github.com/cordon-co/cordon-cli/cli/cmd/file"
@@ -60,9 +61,11 @@ func init() {
 		logCmd,
 		uninstallCmd,
 		versionCmd,
+		auth.Cmd,
 		file.Cmd,
 		pass.Cmd,
 		command.Cmd,
+		sessionsCmd,
 	)
 }
 

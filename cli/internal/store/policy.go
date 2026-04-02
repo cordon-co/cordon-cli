@@ -189,6 +189,36 @@ func NormalizePattern(pattern, repoRoot string) string {
 	return rel
 }
 
+// NormalizeFilePath converts a concrete file path to a canonical form for
+// storage and display.
+//
+// Behaviour:
+//   - Empty input stays empty.
+//   - Paths are cleaned with filepath.Clean.
+//   - Absolute paths inside repoRoot are converted to repo-relative paths.
+//   - Absolute paths outside repoRoot remain absolute.
+//   - Relative paths remain relative after cleaning.
+func NormalizeFilePath(filePath, repoRoot string) string {
+	if filePath == "" {
+		return ""
+	}
+
+	cleanPath := filepath.Clean(filePath)
+	if repoRoot == "" || !filepath.IsAbs(cleanPath) {
+		return cleanPath
+	}
+
+	cleanRoot := filepath.Clean(repoRoot)
+	rel, err := filepath.Rel(cleanRoot, cleanPath)
+	if err != nil {
+		return cleanPath
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return cleanPath
+	}
+	return rel
+}
+
 // StandardGuardrailFileRules is the default set of guardrail file rules offered
 // during `cordon init`. All are seeded with prevent_read=true so agents cannot
 // read credential files into their context. They are stored as normal file rules

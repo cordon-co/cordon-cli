@@ -3,7 +3,7 @@ package agents
 import (
 	"path/filepath"
 
-	"github.com/cordon-co/cordon-cli/cli/internal/claudecfg"
+	"github.com/cordon-co/cordon-cli/cli/internal/config"
 )
 
 // GeminiCLI configures Google Gemini CLI via .gemini/settings.json.
@@ -16,28 +16,28 @@ func (g *GeminiCLI) DisplayName() string { return "Gemini CLI" }
 func (g *GeminiCLI) Installable() bool   { return true }
 
 func (g *GeminiCLI) Install(repoRoot string) error {
-	settingsPath := filepath.Join(repoRoot, claudecfg.GeminiSettingsRelPath)
-	data, err := claudecfg.ReadSettings(settingsPath)
+	settingsPath := filepath.Join(repoRoot, config.GeminiSettingsRelPath)
+	data, err := config.ReadSettings(settingsPath)
 	if err != nil {
 		return err
 	}
-	claudecfg.AddGeminiHookEntry(data, "gemini-cli")
-	return claudecfg.WriteAtomic(settingsPath, data)
+	config.AddGeminiHookEntry(data, "gemini-cli")
+	return config.WriteAtomic(settingsPath, data)
 }
 
 func (g *GeminiCLI) Remove(repoRoot string) error {
-	settingsPath := filepath.Join(repoRoot, claudecfg.GeminiSettingsRelPath)
-	data, err := claudecfg.ReadSettings(settingsPath)
+	settingsPath := filepath.Join(repoRoot, config.GeminiSettingsRelPath)
+	data, err := config.ReadSettings(settingsPath)
 	if err != nil {
 		return err
 	}
-	claudecfg.RemoveGeminiHookEntry(data)
-	return claudecfg.WriteAtomic(settingsPath, data)
+	config.RemoveGeminiHookEntry(data)
+	return config.WriteAtomic(settingsPath, data)
 }
 
 func (g *GeminiCLI) Installed(repoRoot string) bool {
-	settingsPath := filepath.Join(repoRoot, claudecfg.GeminiSettingsRelPath)
-	data, err := claudecfg.ReadSettings(settingsPath)
+	settingsPath := filepath.Join(repoRoot, config.GeminiSettingsRelPath)
+	data, err := config.ReadSettings(settingsPath)
 	if err != nil {
 		return false
 	}
@@ -57,5 +57,5 @@ func (g *GeminiCLI) Installed(repoRoot string) bool {
 	if !ok {
 		return false
 	}
-	return claudecfg.HasGeminiCordonHook(bt)
+	return config.HasGeminiCordonHook(bt)
 }

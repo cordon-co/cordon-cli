@@ -8,6 +8,7 @@ import (
 
 // AuditEntry is a single row written to the audit_log table.
 type AuditEntry struct {
+	ID         int64  // auto-increment primary key; populated by queries, ignored on insert
 	EventType  string // 'hook_allow', 'hook_deny', 'file_add', 'file_remove',
 	//                   'pass_issue', 'pass_revoke', 'pass_expire', 'integrity_check'
 	ToolName   string // agent tool name for hook events; empty otherwise

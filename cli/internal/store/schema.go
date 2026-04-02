@@ -63,8 +63,7 @@ func MigratePolicyDB(db *sql.DB) error {
 
 		// policy_events — immutable, append-only log of every policy mutation.
 		// The existing file_rules and command_rules tables are projections rebuilt
-		// from this event log. The hash chain provides tamper detection and
-		// deterministic replay for sync.
+		// from this event log for deterministic sync/replay.
 		`CREATE TABLE IF NOT EXISTS policy_events (
 			seq            INTEGER PRIMARY KEY AUTOINCREMENT,
 			event_id       TEXT    NOT NULL UNIQUE,
@@ -72,8 +71,6 @@ func MigratePolicyDB(db *sql.DB) error {
 			payload        TEXT    NOT NULL,
 			actor          TEXT    NOT NULL,
 			timestamp      TEXT    NOT NULL,
-			parent_hash    TEXT    NOT NULL DEFAULT '',
-			hash           TEXT    NOT NULL,
 			server_seq     INTEGER
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_policy_events_server_seq ON policy_events(server_seq)`,
@@ -126,10 +123,23 @@ func MigrateDataDB(db *sql.DB) error {
 			tool_name  TEXT    NOT NULL,
 			file_path  TEXT    NOT NULL,
 			tool_input TEXT    NOT NULL,
+			command_raw            TEXT NOT NULL DEFAULT '',
+			command_parsed_ok      INTEGER NOT NULL DEFAULT 0,
+			command_parse_error    TEXT NOT NULL DEFAULT '',
+			command_parser         TEXT NOT NULL DEFAULT '',
+			command_parser_version TEXT NOT NULL DEFAULT '',
+			command_ops_json       TEXT NOT NULL DEFAULT '[]',
+			denied_op_index        INTEGER NOT NULL DEFAULT -1,
+			denied_op_reason       TEXT NOT NULL DEFAULT '',
+			matched_rule_pattern   TEXT NOT NULL DEFAULT '',
+			matched_rule_type      TEXT NOT NULL DEFAULT '',
+			ambiguity              TEXT NOT NULL DEFAULT '',
 			decision   TEXT    NOT NULL CHECK(decision IN ('allow','deny')),
 			os_user    TEXT    NOT NULL DEFAULT '',
 			agent      TEXT    NOT NULL DEFAULT '',
-			pass_id    TEXT    NOT NULL DEFAULT ''
+			pass_id    TEXT    NOT NULL DEFAULT '',
+			secrets_detected INTEGER NOT NULL DEFAULT 0,
+			secret_rule_ids  TEXT    NOT NULL DEFAULT '[]'
 		)`,
 		`CREATE INDEX IF NOT EXISTS hook_log_ts        ON hook_log(ts)`,
 		`CREATE INDEX IF NOT EXISTS hook_log_file_path ON hook_log(file_path)`,
@@ -193,9 +203,39 @@ func MigrateDataDB(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_audit_timestamp  ON audit_log(timestamp)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_event_type ON audit_log(event_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_file_path  ON audit_log(file_path)`,
+
+		// sessions — per-session metadata and aggregated token usage,
+		// populated by background transcript extraction.
+		`CREATE TABLE IF NOT EXISTS sessions (
+			session_id          TEXT PRIMARY KEY,
+			agent               TEXT NOT NULL DEFAULT '',
+			description         TEXT NOT NULL DEFAULT '',
+			transcript_path     TEXT NOT NULL DEFAULT '',
+			input_tokens        INTEGER NOT NULL DEFAULT 0,
+			output_tokens       INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens   INTEGER NOT NULL DEFAULT 0,
+			first_seen_at       INTEGER NOT NULL DEFAULT 0,
+			last_seen_at        INTEGER NOT NULL DEFAULT 0,
+			updated_at          INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS sessions_last_seen ON sessions(last_seen_at)`,
 	}
 
 	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+
+	// sync_watermarks — tracks the last-synced row ID for each data table.
+	// Used by cordon sync to push only new rows since the last sync.
+	syncStmts := []string{
+		`CREATE TABLE IF NOT EXISTS sync_watermarks (
+			table_name TEXT PRIMARY KEY,
+			last_id    INTEGER NOT NULL DEFAULT 0
+		)`,
+	}
+	for _, stmt := range syncStmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
 		}
@@ -206,17 +246,38 @@ func MigrateDataDB(db *sql.DB) error {
 	// we ignore that specific error ("duplicate column name").
 	alterStmts := []string{
 		`ALTER TABLE hook_log ADD COLUMN pass_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN command_raw TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN command_parsed_ok INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE hook_log ADD COLUMN command_parse_error TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN command_parser TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN command_parser_version TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN command_ops_json TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE hook_log ADD COLUMN denied_op_index INTEGER NOT NULL DEFAULT -1`,
+		`ALTER TABLE hook_log ADD COLUMN denied_op_reason TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN matched_rule_pattern TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN matched_rule_type TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN ambiguity TEXT NOT NULL DEFAULT ''`,
 		// Hash chain columns for tamper evidence.
 		`ALTER TABLE hook_log ADD COLUMN notify INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE hook_log ADD COLUMN parent_hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE hook_log ADD COLUMN hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE audit_log ADD COLUMN parent_hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE audit_log ADD COLUMN hash TEXT NOT NULL DEFAULT ''`,
+		// Session tracking columns for transcript extraction.
+		`ALTER TABLE hook_log ADD COLUMN session_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN transcript_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hook_log ADD COLUMN secrets_detected INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE hook_log ADD COLUMN secret_rule_ids TEXT NOT NULL DEFAULT '[]'`,
 	}
 	for _, stmt := range alterStmts {
 		if _, err := db.Exec(stmt); err != nil && !isDuplicateColumn(err) {
 			return err
 		}
+	}
+
+	// Additional indexes for migrated columns.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS hook_log_session_id ON hook_log(session_id)`); err != nil {
+		return err
 	}
 
 	return nil

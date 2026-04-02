@@ -231,36 +231,58 @@ func followEntryKey(e store.UnifiedEntry) string {
 	return e.Time.Format(time.RFC3339Nano) + "|" + e.EventType + "|" + e.ToolName + "|" + e.FilePath + "|" + e.Detail
 }
 
-// formatLogEntry writes a two-line coloured entry to buf.
+// formatLogEntry writes a coloured entry to buf.
 //
-// Line 1:  <BADGE>  <timestamp>  [tool  ]  <subject>
-// Line 2:           user: …  ·  agent: …  ·  detail
+// Line 1: <BADGE>  [tool  ]  <subject>
+// Line 2 (deny only): Reason: <reason text>
+// Line 3: metadata line with timestamp, agent, session, pass, and detail.
 func formatLogEntry(buf *bytes.Buffer, e store.UnifiedEntry) {
 	const reset = "\033[0m"
 	const dim = "\033[2m"
 
 	label, color := logEventLabel(e.EventType)
-	ts := e.Time.Local().Format("2006-01-02 15:04:05")
+	ts := formatTimestamp(e.Time)
 
-	fmt.Fprintf(buf, "%s%-6s%s  %s", color, label, reset, ts)
+	fmt.Fprintf(buf, "%s%-6s%s", color, label, reset)
 
 	if e.ToolName != "" {
 		fmt.Fprintf(buf, "  %-12s", e.ToolName)
 	}
 
 	subject := e.FilePath
+	if subject == "" && e.Command != "" {
+		subject = e.Command
+		if len(subject) > 60 {
+			subject = subject[:60] + "…"
+		}
+	}
 	if subject != "" {
 		fmt.Fprintf(buf, "  %s", subject)
 	}
 	buf.WriteByte('\n')
 
-	// Metadata line.
-	var meta []string
-	if e.User != "" {
-		meta = append(meta, "user: "+e.User)
+	if e.EventType == "hook_deny" && e.DeniedOpReason != "" {
+		reason := e.DeniedOpReason
+		var parts []string
+		if e.MatchedRulePattern != "" {
+			parts = append(parts, "rule: "+e.MatchedRulePattern)
+		}
+		if e.MatchedRuleType != "" {
+			parts = append(parts, "type: "+e.MatchedRuleType)
+		}
+		if len(parts) > 0 {
+			reason += " (" + strings.Join(parts, ", ") + ")"
+		}
+		fmt.Fprintf(buf, "        %sReason:%s %s\n", dim, reset, reason)
 	}
+
+	// Metadata line: <timestamp>  ·  <agent>  ·  <session>  ·  <pass>  ·  <detail>
+	meta := []string{ts}
 	if e.Agent != "" {
-		meta = append(meta, "agent: "+e.Agent)
+		meta = append(meta, e.Agent)
+	}
+	if e.SessionID != "" {
+		meta = append(meta, "session: "+e.SessionID)
 	}
 	if e.PassID != "" {
 		meta = append(meta, "pass: "+e.PassID)
@@ -344,7 +366,7 @@ func writeLogCSV(w io.Writer, entries []store.UnifiedEntry) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
 		"timestamp", "event_type", "tool_name", "file_path",
-		"file_rule_id", "pass_id", "user", "agent", "detail",
+		"file_rule_id", "pass_id", "user", "agent", "session_id", "detail",
 	}); err != nil {
 		return err
 	}
@@ -358,6 +380,7 @@ func writeLogCSV(w io.Writer, entries []store.UnifiedEntry) error {
 			e.PassID,
 			e.User,
 			e.Agent,
+			e.SessionID,
 			e.Detail,
 		}); err != nil {
 			return err
@@ -365,6 +388,27 @@ func writeLogCSV(w io.Writer, entries []store.UnifiedEntry) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+// formatTimestamp returns a relative "Xh ago" / "Ym ago" string for entries
+// within the last 24 hours, and an absolute timestamp otherwise.
+func formatTimestamp(t time.Time) string {
+	ago := time.Since(t)
+	if ago < 0 || ago >= 24*time.Hour {
+		return t.Local().Format("2006-01-02 15:04:05")
+	}
+	if ago < time.Minute {
+		return "just now"
+	}
+	if ago < time.Hour {
+		return fmt.Sprintf("%dm ago", int(ago.Minutes()))
+	}
+	h := int(ago.Hours())
+	m := int(ago.Minutes()) % 60
+	if m == 0 {
+		return fmt.Sprintf("%dh ago", h)
+	}
+	return fmt.Sprintf("%dh%dm ago", h, m)
 }
 
 // parseSinceDuration parses a duration string into a time.Time representing

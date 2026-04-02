@@ -1,6 +1,7 @@
 build/
 .cordon/
 .vscode/
+.codex/
 .cursor/
 .opencode/
 .gemini/

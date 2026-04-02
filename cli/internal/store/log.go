@@ -8,17 +8,33 @@ import (
 
 // HookLogEntry is a single row written to the hook_log table.
 type HookLogEntry struct {
-	Ts         int64  // Unix microseconds
-	ToolName   string
-	FilePath   string
-	ToolInput  string // raw JSON of the tool_input field
-	Decision   string // "allow" or "deny"
-	OSUser     string
-	Agent      string
-	PassID     string
-	Notify     bool   // rule had notification flags
-	ParentHash string // hash of previous hook_log entry
-	Hash       string // SHA-256 hash for tamper evidence
+	ID                   int64 // auto-increment primary key; populated by queries, ignored on insert
+	Ts                   int64 // Unix microseconds
+	ToolName             string
+	FilePath             string
+	ToolInput            string // raw JSON of the tool_input field
+	CommandRaw           string
+	CommandParsed        bool
+	CommandParseError    string
+	CommandParser        string
+	CommandParserVersion string
+	CommandOpsJSON       string
+	DeniedOpIndex        int
+	DeniedOpReason       string
+	MatchedRulePattern   string
+	MatchedRuleType      string
+	Ambiguity            string
+	Decision             string // "allow" or "deny"
+	OSUser               string
+	Agent                string
+	PassID               string
+	Notify               bool   // rule had notification flags
+	SessionID            string // agent session identifier
+	TranscriptPath       string // path to session transcript (or conversation_id for Cursor)
+	SecretsDetected      bool
+	SecretRuleIDs        string // JSON array text of unique detected rule IDs
+	ParentHash           string // hash of previous hook_log entry
+	Hash                 string // SHA-256 hash for tamper evidence
 }
 
 // InsertHookLog appends a hook invocation to the audit log.
@@ -42,12 +58,26 @@ func InsertHookLog(db *sql.DB, e HookLogEntry) error {
 	if e.Notify {
 		notify = 1
 	}
+	var parsed int
+	if e.CommandParsed {
+		parsed = 1
+	}
+	var secretsDetected int
+	if e.SecretsDetected {
+		secretsDetected = 1
+	}
 
 	_, err = db.Exec(
-		`INSERT INTO hook_log (ts, tool_name, file_path, tool_input, decision, os_user, agent, pass_id, notify, parent_hash, hash)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.Ts, e.ToolName, e.FilePath, e.ToolInput, e.Decision, e.OSUser, e.Agent, e.PassID,
-		notify, e.ParentHash, e.Hash,
+		`INSERT INTO hook_log (
+			ts, tool_name, file_path, tool_input,
+			command_raw, command_parsed_ok, command_parse_error, command_parser, command_parser_version, command_ops_json,
+			denied_op_index, denied_op_reason, matched_rule_pattern, matched_rule_type, ambiguity,
+			decision, os_user, agent, pass_id, notify, session_id, transcript_path, secrets_detected, secret_rule_ids, parent_hash, hash
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.Ts, e.ToolName, e.FilePath, e.ToolInput,
+		e.CommandRaw, parsed, e.CommandParseError, e.CommandParser, e.CommandParserVersion, e.CommandOpsJSON,
+		e.DeniedOpIndex, e.DeniedOpReason, e.MatchedRulePattern, e.MatchedRuleType, e.Ambiguity,
+		e.Decision, e.OSUser, e.Agent, e.PassID, notify, e.SessionID, e.TranscriptPath, secretsDetected, e.SecretRuleIDs, e.ParentHash, e.Hash,
 	)
 	return err
 }
