@@ -38,7 +38,7 @@
 ---
 
 > [!NOTE]
-> Upgrading from any version before `v0.6.x` may require deleting `~/.cordon/repos/` and/or cordon uninstall && cordon init in a repository to reset legacy databases.
+> Upgrading from any version before `v0.6.x` may require deleting `~/.cordon/repos/` and/or `cordon uninstall && cordon init` in a repository to reset legacy databases.
 > Database migrations and installation improvements are to be included from `v0.6.x` onward.
 
 ## Installation
