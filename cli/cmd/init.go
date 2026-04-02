@@ -31,9 +31,11 @@ installation and returns an informative message.`,
 }
 
 var initYes bool
+var initAgent bool
 
 func init() {
 	initCmd.Flags().BoolVarP(&initYes, "yes", "y", false, "Accept sensible defaults (non-interactive)")
+	initCmd.Flags().BoolVar(&initAgent, "agent", false, "Configure managed agent integrations for an already initialised repository")
 }
 
 type initResult struct {
@@ -58,7 +60,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Check if already initialised.
 	policyDBPath := filepath.Join(absRoot, ".cordon", "policy.db")
-	if store.HasPerimeterID(policyDBPath) {
+	alreadyInitialised := store.HasPerimeterID(policyDBPath)
+	if alreadyInitialised && !initAgent {
 		if flags.JSON {
 			out, _ := json.MarshalIndent(map[string]interface{}{
 				"already_initialised": true,
@@ -82,45 +85,48 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("init: migrate policy database: %w", err)
 	}
 
-	// Ensure a stable perimeter ID exists for this project.
-	perimeterID, err := store.EnsurePerimeterID(policyDB, absRoot)
-	if err != nil {
-		return fmt.Errorf("init: ensure perimeter id: %w", err)
-	}
+	var dataDBPath string
+	if !alreadyInitialised {
+		// Ensure a stable perimeter ID exists for this project.
+		perimeterID, err := store.EnsurePerimeterID(policyDB, absRoot)
+		if err != nil {
+			return fmt.Errorf("init: ensure perimeter id: %w", err)
+		}
 
-	// Data database (~/.cordon/repos/<perimeter_id>/data.db)
-	dataDBPath, err := store.DataDBPathFromID(perimeterID)
-	if err != nil {
-		return fmt.Errorf("init: resolve data db path: %w", err)
-	}
+		// Data database (~/.cordon/repos/<perimeter_id>/data.db)
+		dataDBPath, err = store.DataDBPathFromID(perimeterID)
+		if err != nil {
+			return fmt.Errorf("init: resolve data db path: %w", err)
+		}
 
-	if err := os.MkdirAll(filepath.Dir(dataDBPath), 0o755); err != nil {
-		return fmt.Errorf("init: create data directory: %w", err)
-	}
+		if err := os.MkdirAll(filepath.Dir(dataDBPath), 0o755); err != nil {
+			return fmt.Errorf("init: create data directory: %w", err)
+		}
 
-	dataDB, err := sql.Open("sqlite", dataDBPath)
-	if err != nil {
-		return fmt.Errorf("init: open data database: %w", err)
-	}
-	defer dataDB.Close()
+		dataDB, err := sql.Open("sqlite", dataDBPath)
+		if err != nil {
+			return fmt.Errorf("init: open data database: %w", err)
+		}
+		defer dataDB.Close()
 
-	if _, err := dataDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-		dataDB.Close()
-		return fmt.Errorf("init: set WAL mode on data.db: %w", err)
-	}
+		if _, err := dataDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+			dataDB.Close()
+			return fmt.Errorf("init: set WAL mode on data.db: %w", err)
+		}
 
-	if err := store.MigrateDataDB(dataDB); err != nil {
-		return fmt.Errorf("init: migrate data database: %w", err)
+		if err := store.MigrateDataDB(dataDB); err != nil {
+			return fmt.Errorf("init: migrate data database: %w", err)
+		}
 	}
 
 	// Agent platform selection.
-	selectedIDs, selectedNames, err := selectAgents(cmd)
+	selectedIDs, selectedNames, err := selectAgents(cmd, installedAgentSet(absRoot))
 	if err != nil {
 		return fmt.Errorf("init: agent selection: %w", err)
 	}
 
-	// Install selected agents.
-	if err := agents.InstallSelected(absRoot, selectedIDs); err != nil {
+	// Reconcile selected agents against current repo state.
+	if err := reconcileAgents(absRoot, selectedIDs); err != nil {
 		return fmt.Errorf("init: install agents: %w", err)
 	}
 
@@ -133,7 +139,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// In --json mode this is skipped unless -y is set.
 	var addedCommands []string
 	var addedFiles []string
-	if !flags.JSON || initYes {
+	if !alreadyInitialised && (!flags.JSON || initYes) {
 		var err error
 		if initYes {
 			addedCommands, addedFiles, err = addStandardGuardrails(policyDB)
@@ -155,6 +161,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if flags.JSON {
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(out))
+		return nil
+	}
+
+	if alreadyInitialised {
+		fmt.Printf("\nCordon agent integrations updated in %s\n", absRoot)
+		if len(selectedNames) > 0 {
+			fmt.Printf("  Managed Agents:  %s\n", strings.Join(selectedNames, ", "))
+		}
+		if hasAgent(selectedIDs, "cursor") {
+			fmt.Println("\n  Note: Cordon MCP will need to be enabled in Cursor Settings -> Tools and MCP")
+		}
 		return nil
 	}
 
@@ -182,7 +199,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 // selectAgents presents the interactive TUI (or auto-selects in --json/-y).
 // Returns the selected agent IDs and display names.
-func selectAgents(cmd *cobra.Command) (ids []string, names []string, err error) {
+func selectAgents(cmd *cobra.Command, preselected map[string]bool) (ids []string, names []string, err error) {
 	allAgents := agents.All()
 
 	if flags.JSON || initYes {
@@ -206,6 +223,9 @@ func selectAgents(cmd *cobra.Command) (ids []string, names []string, err error) 
 		}
 		if !a.Installable() {
 			options[i].Suffix = "(coming soon)"
+		}
+		if preselected[a.ID()] {
+			options[i].Selected = true
 		}
 	}
 
@@ -231,6 +251,42 @@ func selectAgents(cmd *cobra.Command) (ids []string, names []string, err error) 
 		names = append(names, allAgents[idx].DisplayName())
 	}
 	return ids, names, nil
+}
+
+func installedAgentSet(repoRoot string) map[string]bool {
+	result := make(map[string]bool)
+	for _, a := range agents.All() {
+		if a.Installable() && a.Installed(repoRoot) {
+			result[a.ID()] = true
+		}
+	}
+	return result
+}
+
+func reconcileAgents(repoRoot string, selectedIDs []string) error {
+	selected := make(map[string]struct{}, len(selectedIDs))
+	for _, id := range selectedIDs {
+		selected[id] = struct{}{}
+	}
+
+	for _, a := range agents.All() {
+		if !a.Installable() {
+			continue
+		}
+
+		if _, keep := selected[a.ID()]; keep {
+			if err := a.Install(repoRoot); err != nil {
+				return fmt.Errorf("install %s: %w", a.ID(), err)
+			}
+			continue
+		}
+
+		if err := a.Remove(repoRoot); err != nil {
+			return fmt.Errorf("remove %s: %w", a.ID(), err)
+		}
+	}
+
+	return nil
 }
 
 func hasAgent(ids []string, target string) bool {
