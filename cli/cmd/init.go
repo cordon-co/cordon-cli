@@ -30,6 +30,12 @@ installation and returns an informative message.`,
 	RunE: runInit,
 }
 
+var initYes bool
+
+func init() {
+	initCmd.Flags().BoolVarP(&initYes, "yes", "y", false, "Accept sensible defaults (non-interactive)")
+}
+
 type initResult struct {
 	RepoRoot string   `json:"repo_root"`
 	PolicyDB string   `json:"policy_db"`
@@ -56,7 +62,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if flags.JSON {
 			out, _ := json.MarshalIndent(map[string]interface{}{
 				"already_initialised": true,
-				"repo_root":          absRoot,
+				"repo_root":           absRoot,
 			}, "", "  ")
 			fmt.Println(string(out))
 			return nil
@@ -123,12 +129,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("init: store installed agents: %w", err)
 	}
 
-	// Standard guardrails — prompt user to opt in (skip in --json mode).
+	// Standard guardrails — prompt user to opt in.
+	// In --json mode this is skipped unless -y is set.
 	var addedCommands []string
 	var addedFiles []string
-	if !flags.JSON {
+	if !flags.JSON || initYes {
 		var err error
-		addedCommands, addedFiles, err = promptAndAddGuardrails(cmd, policyDB)
+		if initYes {
+			addedCommands, addedFiles, err = addStandardGuardrails(policyDB)
+		} else {
+			addedCommands, addedFiles, err = promptAndAddGuardrails(cmd, policyDB)
+		}
 		if err != nil {
 			return fmt.Errorf("init: guardrails: %w", err)
 		}
@@ -169,12 +180,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// selectAgents presents the interactive TUI (or auto-selects in --json/non-TTY).
+// selectAgents presents the interactive TUI (or auto-selects in --json/-y).
 // Returns the selected agent IDs and display names.
 func selectAgents(cmd *cobra.Command) (ids []string, names []string, err error) {
 	allAgents := agents.All()
 
-	if flags.JSON {
+	if flags.JSON || initYes {
 		// Auto-select all installable agents.
 		for _, a := range allAgents {
 			if a.Installable() {
@@ -264,6 +275,21 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) (addedCommands
 		return nil, nil, nil
 	}
 
+	addedCommands, addedFiles, err = addStandardGuardrails(policyDB)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	total := len(addedCommands) + len(addedFiles)
+	if total > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  added %d guardrail(s).\n", total)
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), "  already configured.")
+	}
+	return addedCommands, addedFiles, nil
+}
+
+func addStandardGuardrails(policyDB *sql.DB) (addedCommands []string, addedFiles []string, err error) {
 	user := store.CurrentOSUser()
 
 	for _, pattern := range store.StandardGuardrails {
@@ -288,11 +314,5 @@ func promptAndAddGuardrails(cmd *cobra.Command, policyDB *sql.DB) (addedCommands
 		addedFiles = append(addedFiles, f.Pattern)
 	}
 
-	total := len(addedCommands) + len(addedFiles)
-	if total > 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "  added %d guardrail(s).\n", total)
-	} else {
-		fmt.Fprintln(cmd.OutOrStdout(), "  already configured.")
-	}
 	return addedCommands, addedFiles, nil
 }
