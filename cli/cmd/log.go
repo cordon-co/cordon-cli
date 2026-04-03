@@ -19,6 +19,7 @@ import (
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
 	"github.com/cordon-co/cordon-cli/cli/internal/store"
+	"github.com/cordon-co/cordon-cli/cli/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +32,7 @@ var logSince string
 var logDate string
 var logAgent string
 var logFollow bool
+var logInteractive bool
 var logExport string
 
 // logCmd — named logCmd to avoid shadowing the standard library "log" package.
@@ -51,6 +53,7 @@ func init() {
 	logCmd.Flags().StringVar(&logDate, "date", "", "Show entries for a specific date (e.g. 2026-03-22)")
 	logCmd.Flags().StringVar(&logAgent, "agent", "", "Filter by agent platform (e.g. claude-code, cursor)")
 	logCmd.Flags().BoolVarP(&logFollow, "follow", "f", false, "Stream new entries in real-time")
+	logCmd.Flags().BoolVarP(&logInteractive, "interactive", "i", false, "Open live interactive log viewer")
 	logCmd.Flags().StringVar(&logExport, "export", "", "Export format: csv")
 }
 
@@ -61,6 +64,15 @@ func runLog(cmd *cobra.Command, args []string) error {
 	}
 	if logFollow && logExport != "" {
 		return fmt.Errorf("log: --follow and --export are mutually exclusive")
+	}
+	if logInteractive && logExport != "" {
+		return fmt.Errorf("log: --interactive and --export are mutually exclusive")
+	}
+	if logInteractive && logFollow {
+		return fmt.Errorf("log: --interactive and --follow are mutually exclusive")
+	}
+	if logInteractive && flags.JSON {
+		return fmt.Errorf("log: --interactive cannot be used with --json")
 	}
 
 	root, warn, err := reporoot.Find()
@@ -116,6 +128,9 @@ func runLog(cmd *cobra.Command, args []string) error {
 
 	if logFollow {
 		return runLogFollow(db, filter)
+	}
+	if logInteractive {
+		return tui.LiveLog(db, filter)
 	}
 
 	entries, err := store.ListUnifiedLog(db, filter)
