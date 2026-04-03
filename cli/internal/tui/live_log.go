@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	livePollInterval = 1 * time.Second
+	livePollInterval = 2 * time.Second
+	timeColWidth     = 16
 )
 
 type liveKey int
@@ -188,7 +189,7 @@ func (s *liveState) retargetSelection(key string) {
 
 func (s *liveState) render() {
 	width, height := terminalSize()
-	maxRows := maxInt(3, height-6)
+	maxRows := maxInt(3, height-5)
 	if s.selected < s.scrollRow {
 		s.scrollRow = s.selected
 	}
@@ -198,13 +199,13 @@ func (s *liveState) render() {
 
 	fmt.Fprint(os.Stderr, "\033[2J\033[H")
 
-	status := "PLAY"
+	toggleLabel := "pause"
+	toggleIcon := "⏸"
 	if s.paused {
-		status = "PAUSE"
+		toggleLabel = "play "
+		toggleIcon = "▶"
 	}
-	header := fmt.Sprintf("Live Log [%s]  entries:%d  updated:%s", status, len(s.entries), s.updatedAt.Format("15:04:05"))
-	fmt.Fprintln(os.Stderr, trimToWidth(header, width))
-	fmt.Fprintln(os.Stderr, trimToWidth("P play/pause | ↑↓ move | → details | ← collapse | q quit", width))
+	fmt.Fprintln(os.Stderr, trimToWidth(fmt.Sprintf("P %s %s | ↑↓ move | → details | ← collapse | q quit", toggleLabel, toggleIcon), width))
 	fmt.Fprintln(os.Stderr, strings.Repeat("-", maxInt(1, width)))
 
 	if len(s.entries) == 0 {
@@ -217,7 +218,7 @@ func (s *liveState) render() {
 			if i == s.selected {
 				prefix = "> "
 			}
-			line := fmt.Sprintf("%s%-8s %-6s %-12s %s", prefix, e.Time.Local().Format("15:04:05"), eventBadge(e), safeTool(e.ToolName), liveSubject(e))
+			line := fmt.Sprintf("%s%s %s", prefix, paddedLiveTime(e.Time), liveActionSummary(e))
 			fmt.Fprintln(os.Stderr, trimToWidth(line, width))
 
 			if s.expanded && i == s.selected {
@@ -248,28 +249,63 @@ func liveSubject(e store.UnifiedEntry) string {
 	return "-"
 }
 
-func eventBadge(e store.UnifiedEntry) string {
-	switch e.EventType {
-	case "hook_allow":
-		return "ALLOW"
-	case "hook_deny":
-		return "DENY"
-	case "pass_issue":
-		return "PASS+"
-	case "pass_revoke":
-		return "PASS-"
-	case "pass_expire":
-		return "PASS!"
-	case "file_add":
-		return "FILE+"
-	case "file_remove":
-		return "FILE-"
-	default:
-		if e.EventType == "" {
-			return "EVENT"
-		}
-		return strings.ToUpper(trimToWidth(e.EventType, 6))
+func liveActionSummary(e store.UnifiedEntry) string {
+	agent := e.Agent
+	if agent == "" {
+		agent = "unknown-agent"
 	}
+
+	action := e.ToolName
+	if action == "" {
+		switch e.EventType {
+		case "hook_allow":
+			action = "write"
+		case "hook_deny":
+			action = "blocked_write"
+		default:
+			if e.EventType != "" {
+				action = e.EventType
+			} else {
+				action = "event"
+			}
+		}
+	}
+
+	subject := liveSubject(e)
+	if subject == "-" {
+		return fmt.Sprintf("%s used %s", agent, action)
+	}
+	return fmt.Sprintf("%s used %s on file %s", agent, action, subject)
+}
+
+func paddedLiveTime(t time.Time) string {
+	label := liveTimeLabel(t)
+	if len(label) >= timeColWidth {
+		return label
+	}
+	return label + strings.Repeat(" ", timeColWidth-len(label))
+}
+
+func liveTimeLabel(t time.Time) string {
+	ago := time.Since(t)
+	if ago < 0 {
+		return t.Local().Format("15:04 02/01/2006")
+	}
+	if ago < time.Minute {
+		return "now"
+	}
+	if ago < time.Hour {
+		return fmt.Sprintf("%dm ago", int(ago.Minutes()))
+	}
+	if ago < 24*time.Hour {
+		h := int(ago.Hours())
+		m := int(ago.Minutes()) % 60
+		if m == 0 {
+			return fmt.Sprintf("%dh ago", h)
+		}
+		return fmt.Sprintf("%dh%dm ago", h, m)
+	}
+	return t.Local().Format("15:04 02/01/2006")
 }
 
 func safeTool(name string) string {
