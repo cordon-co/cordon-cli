@@ -1,0 +1,6 @@
+package: apicontract
+output: cli/internal/apicontract/gen_types.go
+generate:
+  models: true
+output-options:
+  skip-prune: true

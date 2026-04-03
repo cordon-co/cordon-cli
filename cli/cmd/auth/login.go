@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cordon-co/cordon-cli/cli/internal/api"
+	"github.com/cordon-co/cordon-cli/cli/internal/apicontract"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/spf13/cobra"
 )
@@ -21,27 +22,8 @@ var loginCmd = &cobra.Command{
 	RunE:  RunLogin,
 }
 
-// deviceResponse is the response from POST /api/v1/auth/device.
-type deviceResponse struct {
-	DeviceCode      string `json:"device_code"`
-	UserCode        string `json:"user_code"`
-	VerificationURI string `json:"verification_uri"`
-	ExpiresIn       int    `json:"expires_in"`
-	Interval        int    `json:"interval"`
-}
-
-// tokenResponse is the success response from POST /api/v1/auth/token.
-type tokenResponse struct {
-	AccessToken string   `json:"access_token"`
-	TokenType   string   `json:"token_type"`
-	ExpiresIn   int      `json:"expires_in"`
-	User        api.User `json:"user"`
-}
-
-// tokenErrorResponse is the error response from POST /api/v1/auth/token.
-type tokenErrorResponse struct {
-	Error string `json:"error"`
-}
+type deviceResponse = apicontract.DeviceCodeResponse
+type tokenResponse = apicontract.TokenResponse
 
 type loginResult struct {
 	User      api.User  `json:"user"`
@@ -78,11 +60,11 @@ func RunLogin(cmd *cobra.Command, args []string) error {
 
 	// Step 2: Display code and open browser.
 	if !flags.JSON {
-		fmt.Fprintf(cmd.OutOrStdout(), "\nOpen this URL in your browser: %s\n", device.VerificationURI)
+		fmt.Fprintf(cmd.OutOrStdout(), "\nOpen this URL in your browser: %s\n", device.VerificationUri)
 		fmt.Fprintf(cmd.OutOrStdout(), "Enter code: %s\n\n", device.UserCode)
 		fmt.Fprintln(cmd.OutOrStdout(), "Waiting for authorization...")
 	}
-	openBrowser(device.VerificationURI)
+	openBrowser(device.VerificationUri)
 
 	// Step 3: Poll for token.
 	interval := time.Duration(device.Interval) * time.Second
@@ -119,9 +101,14 @@ func RunLogin(cmd *cobra.Command, args []string) error {
 
 		// Success — save credentials.
 		now := time.Now().UTC()
+		user := api.User{
+			ID:          token.User.Id,
+			Username:    token.User.Username,
+			DisplayName: token.User.DisplayName,
+		}
 		creds := &api.Credentials{
 			AccessToken: token.AccessToken,
-			User:        token.User,
+			User:        user,
 			IssuedAt:    now,
 			ExpiresAt:   now.Add(time.Duration(token.ExpiresIn) * time.Second),
 		}

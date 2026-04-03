@@ -1,10 +1,14 @@
 VERSION ?= dev
 LDFLAGS := -ldflags "-X github.com/cordon-co/cordon-cli/cli/cmd.Version=$(VERSION)"
 BUILD   := build
+OPENAPI_SPEC ?= ../openapi/cordon-v1.openapi.yaml
+OPENAPI_CONFIG := cli/internal/apicontract/oapi-codegen.yaml
+OPENAPI_OUTPUT := cli/internal/apicontract/gen_types.go
 
 .PHONY: build build-all clean fmt vet \
         build-darwin-arm64 build-darwin-amd64 \
-        build-linux-amd64 build-linux-arm64
+        build-linux-amd64 build-linux-arm64 \
+        openapi-generate openapi-check
 
 ## build: compile for the current platform
 build:
@@ -36,3 +40,15 @@ vet:
 ## clean: remove build artifacts
 clean:
 	rm -rf $(BUILD)
+
+## openapi-generate: generate API contract types from OpenAPI spec
+openapi-generate:
+	@test -f "$(OPENAPI_SPEC)" || (echo "missing OpenAPI spec at $(OPENAPI_SPEC)"; exit 1)
+	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1 \
+		-config $(OPENAPI_CONFIG) \
+		$(OPENAPI_SPEC)
+
+## openapi-check: verify generated contract types are up to date
+openapi-check: openapi-generate
+	@git diff --exit-code -- $(OPENAPI_OUTPUT) >/dev/null || \
+		(echo "OpenAPI generated file is out of date: $(OPENAPI_OUTPUT)"; git --no-pager diff -- $(OPENAPI_OUTPUT); exit 1)
