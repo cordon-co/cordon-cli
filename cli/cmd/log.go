@@ -127,6 +127,17 @@ func runLog(cmd *cobra.Command, args []string) error {
 	}
 
 	if logFollow {
+		// Follow mode is an unfiltered live stream of all event types.
+		// Ignore category and attribute filters so policy, pass, allow, and deny
+		// entries all appear in a single feed.
+		filter.File = ""
+		filter.Agent = ""
+		filter.Allow = false
+		filter.Deny = false
+		filter.Granted = false
+		filter.Pass = false
+		filter.Since = time.Time{}
+		filter.Until = time.Time{}
 		return runLogFollow(db, filter)
 	}
 	if logInteractive {
