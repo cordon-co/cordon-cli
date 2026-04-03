@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cordon-co/cordon-cli/cli/internal/api"
+	"github.com/cordon-co/cordon-cli/cli/internal/apicontract"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/spf13/cobra"
 )
@@ -17,12 +18,6 @@ var statusCmd = &cobra.Command{
 	Long:  "Verifies the stored token against the server and displays current user info.",
 	Args:  cobra.NoArgs,
 	RunE:  runStatus,
-}
-
-// meResponse is the response from GET /api/v1/auth/me.
-type meResponse struct {
-	User       api.User    `json:"user"`
-	Perimeters []perimeter `json:"perimeters"`
 }
 
 type perimeter struct {
@@ -55,7 +50,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	// Verify token with server.
 	client := api.NewClientWithToken(creds.AccessToken)
-	var me meResponse
+	var me apicontract.MeResponse
 	_, err = client.GetJSON("/api/v1/auth/me", &me)
 	if err != nil {
 		if errors.Is(err, api.ErrUnauthorized) {
@@ -72,26 +67,40 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("auth status: verify token: %w", err)
 	}
 
+	user := api.User{
+		ID:          me.User.Id,
+		Username:    me.User.Username,
+		DisplayName: me.User.DisplayName,
+	}
+	perimeters := make([]perimeter, 0, len(me.Perimeters))
+	for _, p := range me.Perimeters {
+		perimeters = append(perimeters, perimeter{
+			ID:   p.Id,
+			Name: p.Name,
+			Role: string(p.Role),
+		})
+	}
+
 	if flags.JSON {
 		out, _ := json.MarshalIndent(statusResult{
 			Authenticated: true,
-			User:          &me.User,
-			Perimeters:    me.Perimeters,
+			User:          &user,
+			Perimeters:    perimeters,
 			ExpiresAt:     &creds.ExpiresAt,
 		}, "", "  ")
 		fmt.Println(string(out))
 		return nil
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Logged in as %s", me.User.Username)
-	if me.User.DisplayName != "" && me.User.DisplayName != me.User.Username {
-		fmt.Fprintf(cmd.OutOrStdout(), " (%s)", me.User.DisplayName)
+	fmt.Fprintf(cmd.OutOrStdout(), "Logged in as %s", user.Username)
+	if user.DisplayName != "" && user.DisplayName != user.Username {
+		fmt.Fprintf(cmd.OutOrStdout(), " (%s)", user.DisplayName)
 	}
 	fmt.Fprintln(cmd.OutOrStdout())
 
-	if len(me.Perimeters) > 0 {
+	if len(perimeters) > 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "\nPerimeters:")
-		for _, p := range me.Perimeters {
+		for _, p := range perimeters {
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s (%s)\n", p.Name, p.Role)
 		}
 	}
