@@ -58,13 +58,17 @@ func TestSyncDataPush_IncludesSecretFields(t *testing.T) {
 	if pushed != 1 {
 		t.Fatalf("pushed = %d, want 1", pushed)
 	}
-	if len(got.HookLog) != 1 {
-		t.Fatalf("hook_log length = %d, want 1", len(got.HookLog))
+	if got.HookLog == nil || len(*got.HookLog) != 1 {
+		l := 0
+		if got.HookLog != nil {
+			l = len(*got.HookLog)
+		}
+		t.Fatalf("hook_log length = %d, want 1", l)
 	}
-	if got.HookLog[0].SecretsDetected != 1 {
-		t.Fatalf("secrets_detected = %d, want 1", got.HookLog[0].SecretsDetected)
+	if (*got.HookLog)[0].SecretsDetected == nil || *(*got.HookLog)[0].SecretsDetected != 1 {
+		t.Fatalf("secrets_detected = %v, want 1", (*got.HookLog)[0].SecretsDetected)
 	}
-	if got.HookLog[0].SecretRuleIDs != `["github-pat"]` {
-		t.Fatalf("secret_rule_ids = %q, want [\"github-pat\"]", got.HookLog[0].SecretRuleIDs)
+	if (*got.HookLog)[0].SecretRuleIds == nil || *(*got.HookLog)[0].SecretRuleIds != `["github-pat"]` {
+		t.Fatalf("secret_rule_ids = %v, want [\"github-pat\"]", (*got.HookLog)[0].SecretRuleIds)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cordon-co/cordon-cli/cli/internal/api"
+	"github.com/cordon-co/cordon-cli/cli/internal/apicontract"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/policysync"
 	"github.com/cordon-co/cordon-cli/cli/internal/reporoot"
@@ -249,15 +250,8 @@ func syncPolicyPush(policyDB *sql.DB, client *api.Client, perimeterID string) (i
 	return pushed, nil
 }
 
-type policyPushRequest struct {
-	Events             []store.PolicyEvent `json:"events"`
-	LastKnownServerSeq int64               `json:"last_known_server_seq"`
-}
-
-type policyPushResponse struct {
-	Accepted             int              `json:"accepted"`
-	ServerSeqAssignments map[string]int64 `json:"server_seq_assignments"`
-}
+type policyPushRequest = apicontract.PolicyPushRequest
+type policyPushResponse = apicontract.PolicyPushResponse
 
 func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events []store.PolicyEvent) (int, error) {
 	maxSeq, err := store.MaxServerSeq(policyDB)
@@ -266,9 +260,20 @@ func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events
 	}
 
 	var resp policyPushResponse
+	wireEvents := make([]apicontract.PolicyEvent, 0, len(events))
+	for _, e := range events {
+		wireEvents = append(wireEvents, apicontract.PolicyEvent{
+			EventId:    e.EventID,
+			EventType:  e.EventType,
+			Payload:    e.Payload,
+			Actor:      e.Actor,
+			Timestamp:  e.Timestamp,
+			ServerSeq:  e.ServerSeq,
+		})
+	}
 	_, err = client.PostJSON(
 		fmt.Sprintf("/api/v1/perimeters/%s/policy/events", perimeterID),
-		policyPushRequest{Events: events, LastKnownServerSeq: maxSeq},
+		policyPushRequest{Events: wireEvents, LastKnownServerSeq: maxSeq},
 		&resp,
 	)
 	if err != nil {
@@ -291,7 +296,7 @@ func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events
 			}
 			_, err = client.PostJSON(
 				fmt.Sprintf("/api/v1/perimeters/%s/policy/events", perimeterID),
-				policyPushRequest{Events: newUnpushed, LastKnownServerSeq: newMaxSeq},
+				policyPushRequest{Events: wireEventsFromStore(newUnpushed), LastKnownServerSeq: newMaxSeq},
 				&resp,
 			)
 			if err != nil {
@@ -309,105 +314,8 @@ func pushEvents(policyDB *sql.DB, client *api.Client, perimeterID string, events
 }
 
 // --- Data Ingest ---
-
-// ingestHookLogEntry matches the spec §4.1 hook_log item shape (includes id).
-type ingestHookLogEntry struct {
-	ID                   int64  `json:"id"`
-	Ts                   int64  `json:"ts"`
-	ToolName             string `json:"tool_name"`
-	FilePath             string `json:"file_path"`
-	ToolInput            string `json:"tool_input"`
-	CommandRaw           string `json:"command_raw"`
-	CommandParsed        bool   `json:"command_parsed_ok"`
-	CommandParseError    string `json:"command_parse_error"`
-	CommandParser        string `json:"command_parser"`
-	CommandParserVersion string `json:"command_parser_version"`
-	CommandOpsJSON       string `json:"command_ops_json"`
-	DeniedOpIndex        int    `json:"denied_op_index"`
-	DeniedOpReason       string `json:"denied_op_reason"`
-	MatchedRulePattern   string `json:"matched_rule_pattern"`
-	MatchedRuleType      string `json:"matched_rule_type"`
-	Ambiguity            string `json:"ambiguity"`
-	Decision             string `json:"decision"`
-	OSUser               string `json:"os_user"`
-	Agent                string `json:"agent"`
-	PassID               string `json:"pass_id"`
-	Notify               bool   `json:"notify"`
-	SessionID            string `json:"session_id"`
-	TranscriptPath       string `json:"transcript_path"`
-	SecretsDetected      int    `json:"secrets_detected"`
-	SecretRuleIDs        string `json:"secret_rule_ids"`
-	ParentHash           string `json:"parent_hash"`
-	Hash                 string `json:"hash"`
-}
-
-// ingestAuditEntry matches the spec §4.1 audit_log item shape (includes id).
-type ingestAuditEntry struct {
-	ID         int64  `json:"id"`
-	EventType  string `json:"event_type"`
-	FilePath   string `json:"file_path"`
-	User       string `json:"user"`
-	Detail     string `json:"detail"`
-	Timestamp  string `json:"timestamp"`
-	ParentHash string `json:"parent_hash"`
-	Hash       string `json:"hash"`
-}
-
-// ingestPass matches the spec §4.1 passes item shape.
-type ingestPass struct {
-	ID         string `json:"id"`
-	FileRuleID string `json:"file_rule_id"`
-	Pattern    string `json:"pattern"`
-	Status     string `json:"status"`
-	IssuedTo   string `json:"issued_to"`
-	IssuedBy   string `json:"issued_by"`
-	IssuedAt   string `json:"issued_at"`
-	ExpiresAt  string `json:"expires_at"`
-}
-
-// ingestSession matches the spec §4.1 sessions item shape.
-type ingestSession struct {
-	SessionID       string `json:"session_id"`
-	Agent           string `json:"agent"`
-	Description     string `json:"description"`
-	TranscriptPath  string `json:"transcript_path"`
-	InputTokens     int64  `json:"input_tokens"`
-	OutputTokens    int64  `json:"output_tokens"`
-	CacheReadTokens int64  `json:"cache_read_tokens"`
-	FirstSeenAt     int64  `json:"first_seen_at"`
-	LastSeenAt      int64  `json:"last_seen_at"`
-	UpdatedAt       int64  `json:"updated_at"`
-}
-
-type ingestWatermarks struct {
-	HookLog            int64  `json:"hook_log"`
-	AuditLog           int64  `json:"audit_log"`
-	PassesLastSyncedAt string `json:"passes_last_synced_at"`
-	Sessions           int64  `json:"sessions"`
-}
-
-type ingestRequest struct {
-	ClientID   string               `json:"client_id"`
-	HookLog    []ingestHookLogEntry `json:"hook_log"`
-	AuditLog   []ingestAuditEntry   `json:"audit_log"`
-	Passes     []ingestPass         `json:"passes"`
-	Sessions   []ingestSession      `json:"sessions"`
-	Watermarks ingestWatermarks     `json:"watermarks"`
-}
-
-type ingestResponse struct {
-	Accepted struct {
-		HookLog  int `json:"hook_log"`
-		AuditLog int `json:"audit_log"`
-		Passes   int `json:"passes"`
-		Sessions int `json:"sessions"`
-	} `json:"accepted"`
-	ChainStatus struct {
-		HookLog  string `json:"hook_log"`
-		AuditLog string `json:"audit_log"`
-	} `json:"chain_status"`
-	NotificationsTriggered int `json:"notifications_triggered"`
-}
+type ingestRequest = apicontract.DataIngestRequest
+type ingestResponse = apicontract.DataIngestResponse
 
 // ingestBatchSize is the maximum number of entries per table per ingest POST.
 // If any table has more entries than this, multiple POSTs are made with
@@ -461,75 +369,75 @@ func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID, clientID stri
 		}
 
 		// Convert to spec-shaped structs.
-		hookItems := make([]ingestHookLogEntry, len(hookEntries))
+		hookItems := make([]apicontract.HookLogEntry, len(hookEntries))
 		for i, e := range hookEntries {
 			secretsDetected := 0
 			if e.SecretsDetected {
 				secretsDetected = 1
 			}
-			hookItems[i] = ingestHookLogEntry{
-				ID:                   e.ID,
+			hookItems[i] = apicontract.HookLogEntry{
+				Id:                   e.ID,
 				Ts:                   e.Ts,
 				ToolName:             e.ToolName,
 				FilePath:             e.FilePath,
-				ToolInput:            e.ToolInput,
-				CommandRaw:           e.CommandRaw,
-				CommandParsed:        e.CommandParsed,
-				CommandParseError:    e.CommandParseError,
-				CommandParser:        e.CommandParser,
-				CommandParserVersion: e.CommandParserVersion,
-				CommandOpsJSON:       e.CommandOpsJSON,
-				DeniedOpIndex:        e.DeniedOpIndex,
-				DeniedOpReason:       e.DeniedOpReason,
-				MatchedRulePattern:   e.MatchedRulePattern,
-				MatchedRuleType:      e.MatchedRuleType,
-				Ambiguity:            e.Ambiguity,
+				ToolInput:            ptr(e.ToolInput),
+				CommandRaw:           ptr(e.CommandRaw),
+				CommandParsedOk:      ptr(e.CommandParsed),
+				CommandParseError:    ptr(e.CommandParseError),
+				CommandParser:        ptr(e.CommandParser),
+				CommandParserVersion: ptr(e.CommandParserVersion),
+				CommandOpsJson:       ptr(e.CommandOpsJSON),
+				DeniedOpIndex:        ptr(e.DeniedOpIndex),
+				DeniedOpReason:       ptr(e.DeniedOpReason),
+				MatchedRulePattern:   ptr(e.MatchedRulePattern),
+				MatchedRuleType:      ptr(e.MatchedRuleType),
+				Ambiguity:            ptr(e.Ambiguity),
 				Decision:             e.Decision,
-				OSUser:               e.OSUser,
-				Agent:                e.Agent,
-				PassID:               e.PassID,
-				Notify:               e.Notify,
-				SessionID:            e.SessionID,
-				TranscriptPath:       e.TranscriptPath,
-				SecretsDetected:      secretsDetected,
-				SecretRuleIDs:        e.SecretRuleIDs,
-				ParentHash:           e.ParentHash,
-				Hash:                 e.Hash,
+				OsUser:               nilIfEmpty(e.OSUser),
+				Agent:                nilIfEmpty(e.Agent),
+				PassId:               nilIfEmpty(e.PassID),
+				Notify:               ptr(e.Notify),
+				SessionId:            nilIfEmpty(e.SessionID),
+				TranscriptPath:       nilIfEmpty(e.TranscriptPath),
+				SecretsDetected:      ptr(secretsDetected),
+				SecretRuleIds:        nilIfEmpty(e.SecretRuleIDs),
+				ParentHash:           nilIfEmpty(e.ParentHash),
+				Hash:                 nilIfEmpty(e.Hash),
 			}
 		}
 
-		auditItems := make([]ingestAuditEntry, len(auditEntries))
+		auditItems := make([]apicontract.AuditLogEntry, len(auditEntries))
 		for i, e := range auditEntries {
-			auditItems[i] = ingestAuditEntry{
-				ID:         e.ID,
+			auditItems[i] = apicontract.AuditLogEntry{
+				Id:         e.ID,
 				EventType:  e.EventType,
-				FilePath:   e.FilePath,
-				User:       e.User,
-				Detail:     e.Detail,
-				Timestamp:  e.Timestamp,
-				ParentHash: e.ParentHash,
-				Hash:       e.Hash,
+				FilePath:   nilIfEmpty(e.FilePath),
+				User:       nilIfEmpty(e.User),
+				Detail:     nilIfEmpty(e.Detail),
+				Timestamp:  mustParseRFC3339(e.Timestamp),
+				ParentHash: nilIfEmpty(e.ParentHash),
+				Hash:       nilIfEmpty(e.Hash),
 			}
 		}
 
-		passItems := make([]ingestPass, len(passes))
+		passItems := make([]apicontract.Pass, len(passes))
 		for i, p := range passes {
-			passItems[i] = ingestPass{
-				ID:         p.ID,
-				FileRuleID: p.FileRuleID,
+			passItems[i] = apicontract.Pass{
+				Id:         p.ID,
+				FileRuleId: nilIfEmpty(p.FileRuleID),
 				Pattern:    p.Pattern,
 				Status:     p.Status,
 				IssuedTo:   p.IssuedTo,
 				IssuedBy:   p.IssuedBy,
-				IssuedAt:   p.IssuedAt,
-				ExpiresAt:  p.ExpiresAt,
+				IssuedAt:   mustParseRFC3339(p.IssuedAt),
+				ExpiresAt:  parseOptionalRFC3339(p.ExpiresAt),
 			}
 		}
 
-		sessionItems := make([]ingestSession, len(sessions))
+		sessionItems := make([]apicontract.Session, len(sessions))
 		for i, s := range sessions {
-			sessionItems[i] = ingestSession{
-				SessionID:       s.SessionID,
+			sessionItems[i] = apicontract.Session{
+				SessionId:       s.SessionID,
 				Agent:           s.Agent,
 				Description:     s.Description,
 				TranscriptPath:  s.TranscriptPath,
@@ -560,16 +468,16 @@ func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID, clientID stri
 		_, err = client.PostJSON(
 			fmt.Sprintf("/api/v1/perimeters/%s/data/ingest", perimeterID),
 			ingestRequest{
-				ClientID: clientID,
-				HookLog:  hookItems,
-				AuditLog: auditItems,
-				Passes:   passItems,
-				Sessions: sessionItems,
-				Watermarks: ingestWatermarks{
-					HookLog:            newHookWM,
-					AuditLog:           newAuditWM,
-					PassesLastSyncedAt: time.Now().UTC().Format(time.RFC3339),
-					Sessions:           newSessionsWM,
+				ClientId: ptr(clientID),
+				HookLog:  &hookItems,
+				AuditLog: &auditItems,
+				Passes:   &passItems,
+				Sessions: &sessionItems,
+				Watermarks: &apicontract.IngestWatermarks{
+					HookLog:            ptr(newHookWM),
+					AuditLog:           ptr(newAuditWM),
+					PassesLastSyncedAt: ptr(time.Now().UTC()),
+					Sessions:           ptr(newSessionsWM),
 				},
 			},
 			&resp,
@@ -610,4 +518,47 @@ func syncDataPush(dataDB *sql.DB, client *api.Client, perimeterID, clientID stri
 	}
 
 	return totalPushed, nil
+}
+
+func wireEventsFromStore(events []store.PolicyEvent) []apicontract.PolicyEvent {
+	out := make([]apicontract.PolicyEvent, 0, len(events))
+	for _, e := range events {
+		out = append(out, apicontract.PolicyEvent{
+			EventId:    e.EventID,
+			EventType:  e.EventType,
+			Payload:    e.Payload,
+			Actor:      e.Actor,
+			Timestamp:  e.Timestamp,
+			ServerSeq:  e.ServerSeq,
+		})
+	}
+	return out
+}
+
+func mustParseRFC3339(v string) time.Time {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t
+	}
+	return time.Now().UTC()
+}
+
+func parseOptionalRFC3339(v string) *time.Time {
+	if v == "" {
+		return nil
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return &t
+	}
+	return nil
+}
+
+func nilIfEmpty(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
