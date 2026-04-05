@@ -61,18 +61,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Check if already initialised.
 	policyDBPath := filepath.Join(absRoot, ".cordon", "policy.db")
 	alreadyInitialised := store.HasPerimeterID(policyDBPath)
-	if alreadyInitialised && !initAgent {
-		if flags.JSON {
-			out, _ := json.MarshalIndent(map[string]interface{}{
-				"already_initialised": true,
-				"repo_root":           absRoot,
-			}, "", "  ")
-			fmt.Println(string(out))
-			return nil
-		}
-		fmt.Printf("Cordon is already initialised in %s\n", absRoot)
-		return nil
-	}
 
 	// Policy database (.cordon/policy.db)
 	policyDB, err := store.OpenPolicyDB(absRoot)
@@ -85,38 +73,53 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("init: migrate policy database: %w", err)
 	}
 
-	var dataDBPath string
-	if !alreadyInitialised {
-		// Ensure a stable perimeter ID exists for this project.
-		perimeterID, err := store.EnsurePerimeterID(policyDB, absRoot)
-		if err != nil {
-			return fmt.Errorf("init: ensure perimeter id: %w", err)
+	// Ensure a stable perimeter ID exists and user-level data db is initialised.
+	perimeterID, err := store.EnsurePerimeterID(policyDB, absRoot)
+	if err != nil {
+		return fmt.Errorf("init: ensure perimeter id: %w", err)
+	}
+
+	// Data database (~/.cordon/repos/<perimeter_id>/data.db)
+	dataDBPath, err := store.DataDBPathFromID(perimeterID)
+	if err != nil {
+		return fmt.Errorf("init: resolve data db path: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dataDBPath), 0o755); err != nil {
+		return fmt.Errorf("init: create data directory: %w", err)
+	}
+
+	dataDB, err := sql.Open("sqlite", dataDBPath)
+	if err != nil {
+		return fmt.Errorf("init: open data database: %w", err)
+	}
+	defer dataDB.Close()
+
+	if _, err := dataDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		dataDB.Close()
+		return fmt.Errorf("init: set WAL mode on data.db: %w", err)
+	}
+
+	if err := store.MigrateDataDB(dataDB); err != nil {
+		return fmt.Errorf("init: migrate data database: %w", err)
+	}
+
+	if alreadyInitialised && !initAgent {
+		if flags.JSON {
+			out, _ := json.MarshalIndent(map[string]interface{}{
+				"already_initialised": true,
+				"repo_root":           absRoot,
+				"policy_db":           filepath.Join(absRoot, ".cordon", "policy.db"),
+				"data_db":             dataDBPath,
+			}, "", "  ")
+			fmt.Println(string(out))
+			return nil
 		}
 
-		// Data database (~/.cordon/repos/<perimeter_id>/data.db)
-		dataDBPath, err = store.DataDBPathFromID(perimeterID)
-		if err != nil {
-			return fmt.Errorf("init: resolve data db path: %w", err)
-		}
-
-		if err := os.MkdirAll(filepath.Dir(dataDBPath), 0o755); err != nil {
-			return fmt.Errorf("init: create data directory: %w", err)
-		}
-
-		dataDB, err := sql.Open("sqlite", dataDBPath)
-		if err != nil {
-			return fmt.Errorf("init: open data database: %w", err)
-		}
-		defer dataDB.Close()
-
-		if _, err := dataDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-			dataDB.Close()
-			return fmt.Errorf("init: set WAL mode on data.db: %w", err)
-		}
-
-		if err := store.MigrateDataDB(dataDB); err != nil {
-			return fmt.Errorf("init: migrate data database: %w", err)
-		}
+		homeDir, _ := os.UserHomeDir()
+		fmt.Printf(".cordon/ found and already configured for this repository (%s)\n", absRoot)
+		fmt.Printf("User data ready at %s\n", shortenHome(dataDBPath, homeDir))
+		return nil
 	}
 
 	// Agent platform selection.
