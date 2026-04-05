@@ -16,10 +16,14 @@ import (
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate via GitHub OAuth",
-	Long:  "Starts a device OAuth flow — opens a browser to complete GitHub authorization and stores credentials in ~/.cordon/credentials.json.",
+	Short: "Authenticate via GitHub OAuth or machine token",
+	Long:  "Starts a device OAuth flow — opens a browser to complete GitHub authorization and stores credentials in ~/.cordon/credentials.json.\n\nFor non-interactive environments (CI, cloud agents), use --token to authenticate with a machine token.",
 	Args:  cobra.NoArgs,
 	RunE:  RunLogin,
+}
+
+func init() {
+	loginCmd.Flags().StringVar(&flags.Token, "token", "", "Machine token for non-interactive authentication")
 }
 
 type deviceResponse = apicontract.DeviceCodeResponse
@@ -27,11 +31,18 @@ type tokenResponse = apicontract.TokenResponse
 
 type loginResult struct {
 	User      api.User  `json:"user"`
-	ExpiresAt time.Time `json:"expires_at"`
+	AuthType  string    `json:"auth_type"`
+	TokenName string    `json:"token_name,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
 }
 
 // RunLogin implements the login flow. Exported for use as a top-level alias.
 func RunLogin(cmd *cobra.Command, args []string) error {
+	// Machine token path: --token flag skips the entire OAuth flow.
+	if flags.Token != "" {
+		return loginWithMachineToken(cmd, flags.Token)
+	}
+
 	// Check if already logged in.
 	if api.IsLoggedIn() {
 		creds, _ := api.LoadCredentials()
@@ -39,6 +50,7 @@ func RunLogin(cmd *cobra.Command, args []string) error {
 			if flags.JSON {
 				out, _ := json.MarshalIndent(loginResult{
 					User:      creds.User,
+					AuthType:  creds.Type,
 					ExpiresAt: creds.ExpiresAt,
 				}, "", "  ")
 				fmt.Println(string(out))
@@ -107,6 +119,7 @@ func RunLogin(cmd *cobra.Command, args []string) error {
 			DisplayName: token.User.DisplayName,
 		}
 		creds := &api.Credentials{
+			Type:        api.CredentialTypeOAuth,
 			AccessToken: token.AccessToken,
 			User:        user,
 			IssuedAt:    now,
@@ -130,6 +143,58 @@ func RunLogin(cmd *cobra.Command, args []string) error {
 	}
 
 	return fmt.Errorf("auth login: device code expired, please try again")
+}
+
+// meResponse is the subset of /api/v1/auth/me we need for machine token login.
+type meResponse struct {
+	User struct {
+		ID          string `json:"id"`
+		Username    string `json:"username"`
+		DisplayName string `json:"display_name"`
+	} `json:"user"`
+	TokenName string `json:"token_name"`
+}
+
+func loginWithMachineToken(cmd *cobra.Command, token string) error {
+	client := api.NewClientWithToken(token)
+
+	var me meResponse
+	_, err := client.GetJSON("/api/v1/auth/me", &me)
+	if err != nil {
+		if errors.Is(err, api.ErrUnauthorized) {
+			return fmt.Errorf("auth login: machine token is invalid or has been revoked")
+		}
+		return fmt.Errorf("auth login: validate machine token: %w", err)
+	}
+
+	creds := &api.Credentials{
+		Type:        api.CredentialTypeMachine,
+		AccessToken: token,
+		TokenName:   me.TokenName,
+		User: api.User{
+			ID:          me.User.ID,
+			Username:    me.User.Username,
+			DisplayName: me.User.DisplayName,
+		},
+		IssuedAt: time.Now().UTC(),
+	}
+
+	if err := api.SaveCredentials(creds); err != nil {
+		return fmt.Errorf("auth login: save credentials: %w", err)
+	}
+
+	if flags.JSON {
+		out, _ := json.MarshalIndent(loginResult{
+			User:      creds.User,
+			AuthType:  api.CredentialTypeMachine,
+			TokenName: me.TokenName,
+		}, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Logged in as %s (machine token: %s)\n", creds.User.Username, me.TokenName)
+	return nil
 }
 
 func openBrowser(url string) {

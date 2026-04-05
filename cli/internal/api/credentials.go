@@ -19,9 +19,17 @@ type User struct {
 	DisplayName string `json:"display_name"`
 }
 
+// Credential types.
+const (
+	CredentialTypeOAuth   = "oauth"
+	CredentialTypeMachine = "machine"
+)
+
 // Credentials holds the stored authentication state.
 type Credentials struct {
+	Type        string    `json:"type"` // "oauth" or "machine"
 	AccessToken string    `json:"access_token"`
+	TokenName   string    `json:"token_name,omitempty"` // for machine tokens
 	ClientID    string    `json:"client_id,omitempty"`
 	User        User      `json:"user"`
 	IssuedAt    time.Time `json:"issued_at"`
@@ -89,13 +97,44 @@ func ClearCredentials() error {
 	return nil
 }
 
-// IsLoggedIn returns true if credentials exist and haven't expired.
+// IsLoggedIn returns true if a valid token is available via env var or stored credentials.
 func IsLoggedIn() bool {
+	if os.Getenv("CORDON_TOKEN") != "" {
+		return true
+	}
 	c, err := LoadCredentials()
 	if err != nil || c == nil {
 		return false
 	}
-	return c.AccessToken != "" && time.Now().Before(c.ExpiresAt)
+	if c.AccessToken == "" {
+		return false
+	}
+	// Machine tokens don't expire client-side (revocation is server-side).
+	if c.Type == CredentialTypeMachine {
+		return true
+	}
+	return time.Now().Before(c.ExpiresAt)
+}
+
+// ResolveToken returns the active token and its type using the precedence chain:
+// 1. CORDON_TOKEN env var (assumed machine token)
+// 2. Stored credentials
+func ResolveToken() (token string, tokenType string, err error) {
+	if v := os.Getenv("CORDON_TOKEN"); v != "" {
+		return v, CredentialTypeMachine, nil
+	}
+	creds, err := LoadCredentials()
+	if err != nil {
+		return "", "", err
+	}
+	if creds == nil || creds.AccessToken == "" {
+		return "", "", nil
+	}
+	credType := creds.Type
+	if credType == "" {
+		credType = CredentialTypeOAuth // backward compat for existing credential files
+	}
+	return creds.AccessToken, credType, nil
 }
 
 // EnsureClientID returns a stable client_id from credentials.json, generating

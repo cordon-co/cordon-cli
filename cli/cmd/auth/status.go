@@ -28,17 +28,25 @@ type perimeter struct {
 
 type statusResult struct {
 	Authenticated bool        `json:"authenticated"`
+	AuthType      string      `json:"auth_type,omitempty"`
+	TokenName     string      `json:"token_name,omitempty"`
 	User          *api.User   `json:"user,omitempty"`
 	Perimeters    []perimeter `json:"perimeters,omitempty"`
 	ExpiresAt     *time.Time  `json:"expires_at,omitempty"`
 }
 
+// meWithTokenName extends the standard MeResponse with an optional token_name field.
+type meWithTokenName struct {
+	apicontract.MeResponse
+	TokenName string `json:"token_name"`
+}
+
 func runStatus(cmd *cobra.Command, args []string) error {
-	creds, err := api.LoadCredentials()
+	token, tokenType, err := api.ResolveToken()
 	if err != nil {
 		return fmt.Errorf("auth status: %w", err)
 	}
-	if creds == nil || creds.AccessToken == "" {
+	if token == "" {
 		if flags.JSON {
 			out, _ := json.MarshalIndent(statusResult{Authenticated: false}, "", "  ")
 			fmt.Println(string(out))
@@ -48,9 +56,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Load stored credentials for metadata (token name, expiry).
+	creds, _ := api.LoadCredentials()
+
 	// Verify token with server.
-	client := api.NewClientWithToken(creds.AccessToken)
-	var me apicontract.MeResponse
+	client := api.NewClientWithToken(token)
+	var me meWithTokenName
 	_, err = client.GetJSON("/api/v1/auth/me", &me)
 	if err != nil {
 		if errors.Is(err, api.ErrUnauthorized) {
@@ -81,13 +92,25 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	// Determine token name: prefer server response, fall back to stored creds.
+	tokenName := me.TokenName
+	if tokenName == "" && creds != nil {
+		tokenName = creds.TokenName
+	}
+
 	if flags.JSON {
-		out, _ := json.MarshalIndent(statusResult{
+		result := statusResult{
 			Authenticated: true,
+			AuthType:      tokenType,
 			User:          &user,
 			Perimeters:    perimeters,
-			ExpiresAt:     &creds.ExpiresAt,
-		}, "", "  ")
+		}
+		if tokenType == api.CredentialTypeMachine {
+			result.TokenName = tokenName
+		} else if creds != nil {
+			result.ExpiresAt = &creds.ExpiresAt
+		}
+		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(out))
 		return nil
 	}
@@ -98,6 +121,16 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout())
 
+	if tokenType == api.CredentialTypeMachine {
+		fmt.Fprintf(cmd.OutOrStdout(), "Auth type: machine token")
+		if tokenName != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), " (%s)", tokenName)
+		}
+		fmt.Fprintln(cmd.OutOrStdout())
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), "Auth type: OAuth")
+	}
+
 	if len(perimeters) > 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "\nPerimeters:")
 		for _, p := range perimeters {
@@ -105,6 +138,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\nToken expires: %s\n", creds.ExpiresAt.Format(time.RFC3339))
+	if tokenType != api.CredentialTypeMachine && creds != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nToken expires: %s\n", creds.ExpiresAt.Format(time.RFC3339))
+	}
 	return nil
 }
