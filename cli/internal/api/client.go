@@ -87,20 +87,18 @@ func resolveBaseURL() string {
 	return "https://api.cordon.sh"
 }
 
-// NewClient creates an API client using stored credentials.
-// If no credentials exist, the client has no token (unauthenticated requests).
+// NewClient creates an API client using the token resolution chain:
+// CORDON_TOKEN env var > stored credentials.
 func NewClient() (*Client, error) {
 	c := &Client{
 		BaseURL:    resolveBaseURL(),
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
-	creds, err := LoadCredentials()
+	token, _, err := ResolveToken()
 	if err != nil {
-		return nil, fmt.Errorf("load credentials: %w", err)
+		return nil, fmt.Errorf("resolve token: %w", err)
 	}
-	if creds != nil {
-		c.Token = creds.AccessToken
-	}
+	c.Token = token
 	return c, nil
 }
 
@@ -133,8 +131,8 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	// Check for token refresh via response header.
-	if newToken := resp.Header.Get("X-Cordon-Token"); newToken != "" {
+	// Check for token refresh via response header (only for OAuth tokens).
+	if newToken := resp.Header.Get("X-Cordon-Token"); newToken != "" && !isMachineToken(c.Token) {
 		c.Token = newToken
 		// Best-effort update of stored credentials.
 		if creds, err := LoadCredentials(); err == nil && creds != nil {
@@ -237,6 +235,11 @@ func ReadConfigURL() string {
 		return cfg.APIURL
 	}
 	return ""
+}
+
+// isMachineToken returns true if the token has the machine token prefix.
+func isMachineToken(token string) bool {
+	return len(token) > 4 && token[:4] == "cmt_"
 }
 
 // ReadSecretDetectionAction returns the secret detection action from

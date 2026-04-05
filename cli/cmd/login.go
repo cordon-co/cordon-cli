@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/cordon-co/cordon-cli/cli/cmd/auth"
+	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -14,4 +15,8 @@ var loginCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return auth.RunLogin(cmd, args)
 	},
+}
+
+func init() {
+	loginCmd.Flags().StringVar(&flags.Token, "token", "", "Machine token for non-interactive authentication")
 }
