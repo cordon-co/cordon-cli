@@ -25,6 +25,10 @@ type Agent interface {
 
 	// Installed reports whether this agent is currently configured in the repo.
 	Installed(repoRoot string) bool
+
+	// SupportsMCPElicitation reports whether this agent platform supports MCP
+	// elicitation flows (interactive access request prompts).
+	SupportsMCPElicitation() bool
 }
 
 var registry = []Agent{

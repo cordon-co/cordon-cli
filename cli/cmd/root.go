@@ -7,8 +7,8 @@ import (
 
 	"github.com/cordon-co/cordon-cli/cli/cmd/auth"
 	"github.com/cordon-co/cordon-cli/cli/cmd/command"
-	"github.com/cordon-co/cordon-cli/cli/cmd/pass"
 	"github.com/cordon-co/cordon-cli/cli/cmd/file"
+	"github.com/cordon-co/cordon-cli/cli/cmd/pass"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/mcpserver"
 	"github.com/spf13/cobra"
@@ -21,6 +21,9 @@ var rootCmd = &cobra.Command{
 	Short: "Team-wide access policies for AI coding agents",
 	Long: `Cordon enforces policy restrictions on AI agents. File and command rules define protected targets; passes grant
 temporary access; the audit log captures every enforcement decision.`,
+	CompletionOptions: cobra.CompletionOptions{
+		DisableDefaultCmd: true,
+	},
 	// Root RunE handles two cases:
 	//   cordon --mcp   → launch MCP server
 	//   cordon         → print help
