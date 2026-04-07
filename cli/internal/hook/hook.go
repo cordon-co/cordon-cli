@@ -1,6 +1,6 @@
 // Package hook implements PreToolUse hook evaluation for cordon.
-// It parses the JSON payload sent by Claude Code and VS Code agents and
-// writes an allow or deny decision.
+// It parses the JSON payload sent by supported agents and writes an allow or
+// deny decision.
 package hook
 
 import (
@@ -248,9 +248,10 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		payload.SessionID = payload.ConversationID
 	}
 
+	agent := payload.inferAgent(agentOverride)
+
 	// Shell command tools: check command rules and shell read/write targets.
-	if isShellCommandTool(payload.ToolName) {
-		agent := payload.inferAgent(agentOverride)
+	if isShellCommandInvocation(payload.ToolName, payload.ToolInput, agent) {
 		event, err := evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker, agent)
 		if event != nil {
 			payload.setSession(event, agentOverride)
@@ -274,8 +275,6 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 		_ = json.Unmarshal([]byte(payload.ToolInput), &inp)
 	}
 	filePath := inp.effectivePath()
-
-	agent := payload.inferAgent(agentOverride)
 
 	// Reading tools: check against prevent-read file rules.
 	if readingTools[payload.ToolName] {
@@ -556,6 +555,15 @@ func isShellCommandTool(toolName string) bool {
 	default:
 		return false
 	}
+}
+
+func isShellCommandInvocation(toolName string, toolInput json.RawMessage, agent string) bool {
+	if isShellCommandTool(toolName) {
+		return true
+	}
+	// OpenCode tool names are not stable across versions; if a command-shaped
+	// payload is present, treat it as a shell invocation for command-rule checks.
+	return agent == "opencode" && strings.TrimSpace(parseBashToolInput(toolInput)) != ""
 }
 
 // evaluateApplyPatch handles VS Code Copilot's apply_patch tool.
