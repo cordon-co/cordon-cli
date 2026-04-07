@@ -1,0 +1,72 @@
+name: Tag Patch On Merge
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: patch-tag-main
+  cancel-in-progress: false
+
+jobs:
+  tag-patch:
+    name: Create next patch tag
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Compute and create next patch tag
+        env:
+          PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          latest_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)"
+
+          if [ -z "${latest_tag}" ]; then
+            major=0
+            minor=1
+            patch=0
+          else
+            version="${latest_tag#v}"
+            IFS='.' read -r major minor patch <<EOF
+${version}
+EOF
+
+            if [ -z "${major}" ] || [ -z "${minor}" ] || [ -z "${patch}" ]; then
+              echo "Latest tag '${latest_tag}' is not in vX.Y.Z format"
+              exit 1
+            fi
+          fi
+
+          next_patch=$((patch + 1))
+          new_tag="v${major}.${minor}.${next_patch}"
+
+          if git rev-parse -q --verify "refs/tags/${new_tag}" >/dev/null; then
+            echo "Tag ${new_tag} already exists; nothing to do"
+            exit 0
+          fi
+
+          target_sha="${PR_MERGE_SHA:-${GITHUB_SHA}}"
+          git tag -a "${new_tag}" "${target_sha}" -m "Release ${new_tag}"
+          git push origin "${new_tag}"
+
+          echo "Created ${new_tag} on ${target_sha}"
