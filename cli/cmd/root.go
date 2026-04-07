@@ -9,8 +9,10 @@ import (
 	"github.com/cordon-co/cordon-cli/cli/cmd/command"
 	"github.com/cordon-co/cordon-cli/cli/cmd/file"
 	"github.com/cordon-co/cordon-cli/cli/cmd/pass"
+	"github.com/cordon-co/cordon-cli/cli/internal/buildinfo"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/cordon-co/cordon-cli/cli/internal/mcpserver"
+	"github.com/cordon-co/cordon-cli/cli/internal/updatecheck"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +35,15 @@ temporary access; the audit log captures every enforcement decision.`,
 			return runMCPServer()
 		}
 		return cmd.Help()
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if flags.JSON || mcpMode {
+			return
+		}
+		if cmd.Name() == "hook" {
+			return
+		}
+		updatecheck.MaybeRun(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), buildinfo.Version)
 	},
 }
 
