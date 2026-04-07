@@ -2,10 +2,12 @@
 # dev-install.sh — build cordon and install it to a local bin directory for testing
 #
 # By default installs to ~/.local/bin (created if absent). Override with INSTALL_DIR.
+# Version defaults to dev. Override with VERSION to test update behavior.
 #
 # Usage:
 #   ./scripts/dev-install.sh
 #   INSTALL_DIR=/usr/local/bin ./scripts/dev-install.sh
+#   VERSION=v0.5.4 ./scripts/dev-install.sh
 
 set -euo pipefail
 
@@ -13,11 +15,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+VERSION="${VERSION:-dev}"
 BUILD_DIR="build"
 BINARY="${BUILD_DIR}/cordon"
 
-echo "Building cordon (dev)..."
-go build -ldflags "-X github.com/cordon-co/cordon-cli/cli/internal/buildinfo.Version=dev" -o "$BINARY" ./cmd/cordon
+echo "Building cordon (version: ${VERSION})..."
+go build -ldflags "-X github.com/cordon-co/cordon-cli/cli/internal/buildinfo.Version=${VERSION}" -o "$BINARY" ./cmd/cordon
 
 mkdir -p "$INSTALL_DIR"
 cp "$BINARY" "${INSTALL_DIR}/cordon"
