@@ -24,11 +24,24 @@ const (
 const pluginContent = `// Cordon enforcement plugin for OpenCode — do not edit.
 // Managed by cordon (https://cordon.sh).
 export const CordonEnforcement = async ({ $, directory }) => {
+  const extractToolInput = (input, output) => {
+    // OpenCode tool hook payloads can surface args under different keys.
+    const candidate =
+      output?.args ??
+      output?.arguments ??
+      input?.args ??
+      input?.arguments ??
+      input?.input ??
+      {};
+    return candidate && typeof candidate === "object" ? candidate : {};
+  };
+
   return {
     "tool.execute.before": async (input, output) => {
+      const toolInput = extractToolInput(input, output);
       const payload = JSON.stringify({
         tool_name: input.tool,
-        tool_input: output.args || {},
+        tool_input: toolInput,
         cwd: directory,
       });
       try {
@@ -45,10 +58,12 @@ export const CordonEnforcement = async ({ $, directory }) => {
             const parsed = JSON.parse(stdout);
             if (parsed.reason) reason = parsed.reason;
           } catch {}
-          throw new Error(reason);
+          const denyError = new Error(reason);
+          denyError.name = "CordonPolicyError";
+          throw denyError;
         }
       } catch (e) {
-        if (e.message && e.message.includes("Cordon")) throw e;
+        if (e?.name === "CordonPolicyError") throw e;
         // Fail-open on infrastructure errors
       }
     },
@@ -58,7 +73,7 @@ export const CordonEnforcement = async ({ $, directory }) => {
 
 // OpenCode configures the OpenCode agent via a JS plugin at
 // .opencode/plugins/cordon-interface.js. The plugin hooks tool.execute.before
-// to enforce Cordon file rules.
+// to enforce Cordon file and command rules.
 type OpenCode struct{}
 
 func (o *OpenCode) ID() string          { return "opencode" }
