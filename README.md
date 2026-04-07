@@ -94,7 +94,7 @@ cordon command add [--allow] <pattern>
 cordon command list
 cordon command remove <pattern>
 
-cordon pass issue --file <path> [--duration 60m|24h|7d|1w|indefinite]
+cordon pass issue <target> [--duration 60m|24h|7d|1w|indefinite]
 cordon pass list [--all]
 cordon pass revoke <pass-id>
 ```

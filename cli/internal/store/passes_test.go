@@ -104,3 +104,55 @@ func TestActivePassForPath_ExpiredNoMatch(t *testing.T) {
 		t.Errorf("expected expired pass to return nil, got pass %s", active.ID)
 	}
 }
+
+func TestActivePassForCommand_Match(t *testing.T) {
+	dataDB := newTestDataDB(t)
+	now := time.Now().UTC()
+
+	p := Pass{
+		FileRuleID: "rule-cmd-1",
+		Pattern:    "git push --force*",
+		IssuedTo:   "test",
+		IssuedBy:   "test",
+		Status:     "active",
+		IssuedAt:   now.Format(time.RFC3339),
+		ExpiresAt:  now.Add(time.Hour).Format(time.RFC3339),
+	}
+	if err := IssuePass(dataDB, p); err != nil {
+		t.Fatal(err)
+	}
+
+	active, err := ActivePassForCommand(dataDB, "git push --force origin main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active == nil {
+		t.Fatal("expected active command pass, got nil")
+	}
+}
+
+func TestActivePassForCommand_ExpiredNoMatch(t *testing.T) {
+	dataDB := newTestDataDB(t)
+	now := time.Now().UTC()
+
+	p := Pass{
+		FileRuleID: "rule-cmd-2",
+		Pattern:    "rm -rf *",
+		IssuedTo:   "test",
+		IssuedBy:   "test",
+		Status:     "active",
+		IssuedAt:   now.Add(-2 * time.Hour).Format(time.RFC3339),
+		ExpiresAt:  now.Add(-time.Hour).Format(time.RFC3339),
+	}
+	if err := IssuePass(dataDB, p); err != nil {
+		t.Fatal(err)
+	}
+
+	active, err := ActivePassForCommand(dataDB, "rm -rf build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != nil {
+		t.Fatalf("expected no active command pass, got %s", active.ID)
+	}
+}

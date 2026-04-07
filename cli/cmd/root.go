@@ -19,8 +19,8 @@ var mcpMode bool
 var rootCmd = &cobra.Command{
 	Use:   "cordon",
 	Short: "Team-wide access policies for AI coding agents",
-	Long: `Cordon enforces file-level write restrictions on AI agents. File rules define protected files, folders or patterns; passes grant
-temporary agent access; the audit log captures every enforcement decision.`,
+	Long: `Cordon enforces policy restrictions on AI agents. File and command rules define protected targets; passes grant
+temporary access; the audit log captures every enforcement decision.`,
 	// Root RunE handles two cases:
 	//   cordon --mcp   → launch MCP server
 	//   cordon         → print help

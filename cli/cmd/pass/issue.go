@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
@@ -14,27 +15,31 @@ import (
 )
 
 var issueFile string
+var issueTarget string
 var issueDuration string
 
 var issueCmd = &cobra.Command{
-	Use:   "issue",
+	Use:   "issue <target>",
 	Short: "Issue a temporary access pass",
-	Long: `Issue a temporary pass granting an agent write access to a protected file.
+	Long: `Issue a temporary pass granting an agent write access to a protected file target
+or shell command target.
 
-The file must already be covered by a Cordon file rule. Duration formats:
+The target must already be covered by a Cordon file rule or command rule.
+Duration formats:
   60m        60 minutes
   24h        24 hours
   7d         7 days
   1w         1 week
   indefinite no expiry`,
-	Args: cobra.NoArgs,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runPassIssue,
 }
 
 func init() {
-	issueCmd.Flags().StringVar(&issueFile, "file", "", "File path to grant access to (required)")
+	issueCmd.Flags().StringVar(&issueFile, "file", "", "Deprecated: use positional target argument")
+	issueCmd.Flags().StringVar(&issueTarget, "target", "", "Pattern, file path, or command to grant access to")
 	issueCmd.Flags().StringVar(&issueDuration, "duration", "60m", "Duration (e.g. 60m, 24h, 7d, 1w, indefinite)")
-	_ = issueCmd.MarkFlagRequired("file")
+	_ = issueCmd.Flags().MarkHidden("file")
 }
 
 type passIssueResult struct {
@@ -42,6 +47,27 @@ type passIssueResult struct {
 }
 
 func runPassIssue(cmd *cobra.Command, args []string) error {
+	argTarget := ""
+	if len(args) > 0 {
+		argTarget = strings.TrimSpace(args[0])
+	}
+	flagTarget := strings.TrimSpace(issueTarget)
+	deprecatedFileTarget := strings.TrimSpace(issueFile)
+
+	if argTarget != "" && flagTarget != "" && argTarget != flagTarget {
+		return fmt.Errorf("pass issue: conflicting targets provided: positional %q and --target %q", argTarget, flagTarget)
+	}
+	target := argTarget
+	if target == "" {
+		target = flagTarget
+	}
+	if target == "" {
+		target = deprecatedFileTarget
+	}
+	if target == "" {
+		return fmt.Errorf("pass issue: missing target — use: cordon pass issue <target>")
+	}
+
 	root, warn, err := reporoot.Find()
 	if err != nil {
 		return fmt.Errorf("pass issue: find repo root: %w", err)
@@ -55,10 +81,10 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pass issue: resolve repo root: %w", err)
 	}
 
-	// Normalize the file path to canonical repo-relative form when possible.
-	issueFile = store.NormalizeFilePath(issueFile, absRoot)
+	// Normalize the file-style target to canonical repo-relative form when possible.
+	normalizedFileTarget := store.NormalizeFilePath(target, absRoot)
 
-	// Validate the file is covered by a file rule.
+	// Validate target is covered by a file rule or command rule.
 	policyDB, err := store.OpenPolicyDB(absRoot)
 	if err != nil {
 		return fmt.Errorf("pass issue: open policy database: %w", err)
@@ -69,12 +95,22 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pass issue: migrate policy database: %w", err)
 	}
 
-	rule, err := store.FileRuleForPath(policyDB, issueFile, absRoot)
+	fileRule, err := store.FileRuleForPath(policyDB, normalizedFileTarget, absRoot)
 	if err != nil {
 		return fmt.Errorf("pass issue: file rule lookup: %w", err)
 	}
-	if rule == nil {
-		return fmt.Errorf("pass issue: %q is not covered by any file rule — add one first with: cordon file add <pattern>", issueFile)
+	var commandRule *store.CommandRule
+	if fileRule == nil {
+		commandRule, err = store.MatchCommandRule(policyDB, target)
+		if err != nil {
+			return fmt.Errorf("pass issue: command rule lookup: %w", err)
+		}
+	}
+	if fileRule == nil && commandRule == nil {
+		return fmt.Errorf(
+			"pass issue: %q is not covered by any file rule or command rule — add one first with: cordon file add <pattern> or cordon command add <pattern>",
+			target,
+		)
 	}
 
 	// Parse the requested duration.
@@ -90,10 +126,22 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 		expiresAtStr = expiresAt.UTC().Format(time.RFC3339)
 	}
 
+	passPattern := ""
+	passFilePath := ""
+	passRuleID := ""
+	if fileRule != nil {
+		passRuleID = fileRule.ID
+		passPattern = fileRule.Pattern
+		passFilePath = normalizedFileTarget
+	} else {
+		passRuleID = commandRule.ID
+		passPattern = commandRule.Pattern
+	}
+
 	p := store.Pass{
-		FileRuleID:      rule.ID,
-		Pattern:         rule.Pattern,
-		FilePath:        issueFile,
+		FileRuleID:      passRuleID,
+		Pattern:         passPattern,
+		FilePath:        passFilePath,
 		IssuedTo:        user,
 		IssuedBy:        user,
 		Status:          "active",
@@ -124,7 +172,7 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 	// The most recently issued pass for this file is first (ListPasses is DESC).
 	var issued store.Pass
 	for _, lp := range passes {
-		if lp.FilePath == issueFile && lp.IssuedAt == now {
+		if lp.Pattern == passPattern && lp.FilePath == passFilePath && lp.IssuedAt == now {
 			issued = lp
 			break
 		}
@@ -133,8 +181,8 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 	// Audit log.
 	_ = store.InsertAudit(dataDB, store.AuditEntry{
 		EventType:  "pass_issue",
-		FilePath:   issueFile,
-		FileRuleID: rule.ID,
+		FilePath:   target,
+		FileRuleID: passRuleID,
 		PassID:     issued.ID,
 		User:       user,
 		Detail:     fmt.Sprintf("duration=%s expires_at=%s", issueDuration, expiresAtStr),
@@ -150,9 +198,13 @@ func runPassIssue(cmd *cobra.Command, args []string) error {
 	if expiresAt != nil {
 		expiry = expiresAt.Local().Format("2006-01-02 15:04:05")
 	}
-	fmt.Printf("pass issued for %s\n", issueFile)
+	fmt.Printf("pass issued for %s\n", target)
 	fmt.Printf("  id:        %s\n", issued.ID)
-	fmt.Printf("  file rule: %s\n", rule.Pattern)
+	if fileRule != nil {
+		fmt.Printf("  file rule: %s\n", fileRule.Pattern)
+	} else {
+		fmt.Printf("  command rule: %s\n", commandRule.Pattern)
+	}
 	fmt.Printf("  expires:   %s\n", expiry)
 	return nil
 }

@@ -17,7 +17,7 @@ func TestPassLifecycle(t *testing.T) {
 			Status string `json:"Status"`
 		} `json:"pass"`
 	}
-	r := runCordon(t, repo, "pass", "issue", "--file", ".env", "--duration", "60m", "--json")
+	r := runCordon(t, repo, "pass", "issue", ".env", "--duration", "60m", "--json")
 	mustParseJSON(t, r.Stdout, &issueResult)
 	if issueResult.Pass.ID == "" {
 		t.Fatal("issue: pass ID is empty")
@@ -72,8 +72,37 @@ func TestPassRequiresFileRule(t *testing.T) {
 	repo := initRepo(t)
 
 	// Issuing a pass for a file with no rule should fail.
-	r := runCordonRaw(t, repo, "pass", "issue", "--file", "no-rule-here.txt", "--json")
+	r := runCordonRaw(t, repo, "pass", "issue", "no-rule-here.txt", "--json")
 	if r.ExitCode == 0 {
 		t.Error("expected non-zero exit when issuing pass for uncovered file, got 0")
+	}
+}
+
+func TestPassIssueForCommandRule(t *testing.T) {
+	repo := initRepo(t)
+
+	runCordon(t, repo, "command", "add", "git push --force*")
+
+	var issueResult struct {
+		Pass struct {
+			ID       string `json:"ID"`
+			Pattern  string `json:"Pattern"`
+			FilePath string `json:"FilePath"`
+			Status   string `json:"Status"`
+		} `json:"pass"`
+	}
+	r := runCordon(t, repo, "pass", "issue", "git push --force origin main", "--duration", "60m", "--json")
+	mustParseJSON(t, r.Stdout, &issueResult)
+	if issueResult.Pass.ID == "" {
+		t.Fatal("issue command pass: pass ID is empty")
+	}
+	if issueResult.Pass.Status != "active" {
+		t.Fatalf("issue command pass: status = %q, want active", issueResult.Pass.Status)
+	}
+	if issueResult.Pass.Pattern != "git push --force*" {
+		t.Fatalf("issue command pass: pattern = %q, want git push --force*", issueResult.Pass.Pattern)
+	}
+	if issueResult.Pass.FilePath != "" {
+		t.Fatalf("issue command pass: file_path = %q, want empty", issueResult.Pass.FilePath)
 	}
 }

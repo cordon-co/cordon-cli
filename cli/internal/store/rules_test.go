@@ -34,6 +34,36 @@ func TestMatchCommandRule_GlobMatch(t *testing.T) {
 	}
 }
 
+func TestMatchCommandRule_PrefixMatchForPlainPattern(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "echo", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := MatchCommandRule(db, "echo hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule == nil {
+		t.Fatal("expected plain pattern to match command prefix, got nil")
+	}
+}
+
+func TestMatchCommandRule_PlainPatternDoesNotMatchDifferentCommand(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "echo", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := MatchCommandRule(db, "echos hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule != nil {
+		t.Fatalf("expected no match for different command, got %q", rule.Pattern)
+	}
+}
+
 func TestMatchCommandRule_AllowOverridesDeny(t *testing.T) {
 	db := newTestPolicyDB(t)
 	if _, err := AddRule(db, "git push --force*", "deny", "standard", "test"); err != nil {

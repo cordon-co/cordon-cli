@@ -162,8 +162,8 @@ type toolInputPath struct {
 }
 
 // setSession stamps the session tracking and agent fields from the payload onto the event.
-func (p hookPayload) setSession(e *Event) {
-	e.Agent = p.inferAgent()
+func (p hookPayload) setSession(e *Event, agentOverride string) {
+	e.Agent = p.inferAgent(agentOverride)
 	e.SessionID = p.SessionID
 	e.TranscriptPath = p.TranscriptPath
 }
@@ -180,7 +180,10 @@ func (p hookPayload) setSession(e *Event) {
 //
 // For agents that do pass --agent (Codex, Gemini, VS Copilot, OpenCode),
 // cmd/hook.go will override this value with the flag.
-func (p hookPayload) inferAgent() string {
+func (p hookPayload) inferAgent(agentOverride string) string {
+	if strings.TrimSpace(agentOverride) != "" {
+		return strings.TrimSpace(agentOverride)
+	}
 	if p.ConversationID != "" {
 		return "cursor"
 	}
@@ -227,7 +230,7 @@ func (t toolInputPath) effectivePath() string {
 //   - nil, other error      → malformed payload or IO error; caller should exit 1
 //
 // Evaluate never calls os.Exit itself, making it fully testable.
-func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, rdChecker ReadChecker, cmdChecker CommandChecker) (*Event, error) {
+func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, rdChecker ReadChecker, cmdChecker CommandChecker, agentOverride string) (*Event, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("hook: read stdin: %w", err)
@@ -247,9 +250,10 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 
 	// Shell command tools: check command rules and shell read/write targets.
 	if isShellCommandTool(payload.ToolName) {
-		event, err := evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker)
+		agent := payload.inferAgent(agentOverride)
+		event, err := evaluateBash(payload, w, errW, checker, rdChecker, cmdChecker, agent)
 		if event != nil {
-			payload.setSession(event)
+			payload.setSession(event, agentOverride)
 		}
 		return event, err
 	}
@@ -258,7 +262,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 	if payload.ToolName == "apply_patch" {
 		event, err := evaluateApplyPatch(payload, w, errW, checker)
 		if event != nil {
-			payload.setSession(event)
+			payload.setSession(event, agentOverride)
 		}
 		return event, err
 	}
@@ -271,7 +275,7 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 	}
 	filePath := inp.effectivePath()
 
-	agent := payload.inferAgent()
+	agent := payload.inferAgent(agentOverride)
 
 	// Reading tools: check against prevent-read file rules.
 	if readingTools[payload.ToolName] {
@@ -363,15 +367,17 @@ func Evaluate(r io.Reader, w io.Writer, errW io.Writer, checker PolicyChecker, r
 // evaluateBash handles the Bash tool. It parses the command string for shell
 // write patterns (redirections, tee, sed -i, cp, mv). If any write target is
 // detected the command is denied; otherwise it is allowed and logged.
-func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker, rdChecker ReadChecker, cmdChecker CommandChecker) (*Event, error) {
+func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker PolicyChecker, rdChecker ReadChecker, cmdChecker CommandChecker, agent string) (*Event, error) {
 	command := parseBashToolInput(payload.ToolInput)
 	analysis := analyzeShellCommand(command, payload.Cwd)
+	commandPassID := ""
+	commandPassNotify := false
 
 	// Check each segment of the command against built-in and custom command rules.
 	for i, seg := range analysis.Commands {
 		// Built-in rules are always checked (no DB needed).
 		if matched := CheckBuiltinRules(seg); matched != nil {
-			reason := commandRuleDenyReason(matched)
+			reason := commandRuleDenyReason(matched, agent)
 			event := &Event{
 				ToolName:             payload.ToolName,
 				ToolInput:            payload.ToolInput,
@@ -398,8 +404,8 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 
 		// Custom rules from the policy database.
 		if cmdChecker != nil {
-			if allowed, matched, cmdNotify := cmdChecker(seg, payload.Cwd); !allowed && matched != nil {
-				reason := commandRuleDenyReason(matched)
+			if allowed, passID, matched, cmdNotify := cmdChecker(seg, payload.Cwd); !allowed && matched != nil {
+				reason := commandRuleDenyReason(matched, agent)
 				event := &Event{
 					ToolName:             payload.ToolName,
 					ToolInput:            payload.ToolInput,
@@ -423,6 +429,11 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 				}
 				fmt.Fprintf(errW, "%s\n", reason)
 				return event, ErrDenied
+			} else if allowed && passID != "" {
+				commandPassID = passID
+				if cmdNotify {
+					commandPassNotify = true
+				}
 			}
 		}
 	}
@@ -483,6 +494,8 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 			Ambiguity:            analysis.ambiguityText(),
 			Decision:             DecisionAllow,
 			Cwd:                  payload.Cwd,
+			Notify:               commandPassNotify,
+			PassID:               commandPassID,
 		}, nil
 	}
 
@@ -531,6 +544,8 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 		Ambiguity:            analysis.ambiguityText(),
 		Decision:             DecisionAllow,
 		Cwd:                  payload.Cwd,
+		Notify:               commandPassNotify,
+		PassID:               commandPassID,
 	}, nil
 }
 
@@ -650,7 +665,7 @@ func readDenyReason(path string) string {
 	return fmt.Sprintf(
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request read access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
-			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
+			"Alternatively, ask the user to grant access themselves using the command cordon pass issue <target>. "+
 			"If the user says they have issued the pass, you may proceed with accessing the file. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
@@ -668,7 +683,7 @@ func policyDenyReason(path string) string {
 	return fmt.Sprintf(
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request write access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
-			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
+			"Alternatively, ask the user to grant access themselves using the command cordon pass issue <target>. "+
 			"If the user says they have issued the pass, you may proceed with accessing the file. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
@@ -688,7 +703,7 @@ func policyBashDenyReason(primary string, all []string) string {
 	return fmt.Sprintf(
 		"CORDON POLICY: %s is protected by a Cordon file policy. "+
 			"To request access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
-			"Alternatively, ask the user to grant access themselves using the command cordon pass issue --file <file>. "+
+			"Alternatively, ask the user to grant access themselves using the command cordon pass issue <target>. "+
 			"If the user says they have issued the pass, you may proceed with accessing the file. "+
 			"Do not attempt to write to this file through any alternative method, "+
 			"including shell commands such as echo, sed, tee, cp, mv, or any other approach. "+
