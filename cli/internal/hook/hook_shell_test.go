@@ -122,3 +122,59 @@ func TestEvaluate_RunInTerminalRecordsCommandPass(t *testing.T) {
 		t.Fatal("event.Notify = false, want true")
 	}
 }
+
+func TestEvaluate_BashAcceptsCmdFieldAlias(t *testing.T) {
+	payload := `{
+  "tool_name": "bash",
+  "tool_input": {"cmd":"git status"},
+  "cwd": "/repo"
+}`
+
+	cmdChecker := func(command, cwd string) (bool, string, *MatchedRule, bool) {
+		if strings.TrimSpace(command) == "git status" {
+			return false, "", &MatchedRule{Pattern: "git status", RuleType: "deny", RuleAuthority: "standard"}, false
+		}
+		return true, "", nil, false
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, nil, cmdChecker, "")
+	if err != ErrDenied {
+		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want non-nil deny event")
+	}
+	if event.DeniedOpReason != "prevent-command rule violation" {
+		t.Fatalf("event.DeniedOpReason = %q, want prevent-command rule violation", event.DeniedOpReason)
+	}
+}
+
+func TestEvaluate_OpenCodeCommandToolNameStillChecksCommandRules(t *testing.T) {
+	payload := `{
+  "tool_name": "terminal.exec",
+  "tool_input": {"command":"git status"},
+  "cwd": "/repo"
+}`
+
+	cmdChecker := func(command, cwd string) (bool, string, *MatchedRule, bool) {
+		if strings.TrimSpace(command) == "git status" {
+			return false, "", &MatchedRule{Pattern: "git status", RuleType: "deny", RuleAuthority: "standard"}, false
+		}
+		return true, "", nil, false
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, nil, cmdChecker, "opencode")
+	if err != ErrDenied {
+		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want non-nil deny event")
+	}
+	if event.DeniedOpReason != "prevent-command rule violation" {
+		t.Fatalf("event.DeniedOpReason = %q, want prevent-command rule violation", event.DeniedOpReason)
+	}
+}

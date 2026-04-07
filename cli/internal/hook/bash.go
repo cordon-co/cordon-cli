@@ -8,6 +8,7 @@ import (
 
 type bashToolInput struct {
 	Command string `json:"command"`
+	Cmd     string `json:"cmd"`
 }
 
 var (
@@ -207,5 +208,8 @@ func parseBashToolInput(raw json.RawMessage) string {
 	if err := json.Unmarshal([]byte(raw), &inp); err != nil {
 		return ""
 	}
-	return inp.Command
+	if inp.Command != "" {
+		return inp.Command
+	}
+	return inp.Cmd
 }
