@@ -84,7 +84,7 @@ cordon init                          Initialise Cordon in the current repository
 cordon uninstall                     Uninstall Cordon from the current repository
 cordon version
 
-cordon log [--since] [--date] [--agent] [--file] [--allow] [--deny] [--granted] [--pass] [--follow] [--export csv]
+cordon log [--since] [--until] [--date] [--limit] [--agent] [--file] [--allow] [--deny] [--granted] [--pass] [--follow] [--export csv]
 
 cordon file add [--allow] [--prevent-read] <pattern>
 cordon file list
