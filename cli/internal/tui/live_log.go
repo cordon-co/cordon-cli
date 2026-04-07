@@ -254,6 +254,10 @@ func liveActionSummary(e store.UnifiedEntry) string {
 	if agent == "" {
 		agent = "unknown-agent"
 	}
+	verb := "used"
+	if e.EventType == "hook_deny" {
+		verb = "attempted"
+	}
 
 	action := e.ToolName
 	if action == "" {
@@ -273,9 +277,9 @@ func liveActionSummary(e store.UnifiedEntry) string {
 
 	subject := liveSubject(e)
 	if subject == "-" {
-		return fmt.Sprintf("%s used %s", agent, action)
+		return fmt.Sprintf("%s %s %s", agent, verb, action)
 	}
-	return fmt.Sprintf("%s used %s on file %s", agent, action, subject)
+	return fmt.Sprintf("%s %s %s on file %s", agent, verb, action, subject)
 }
 
 func paddedLiveTime(t time.Time) string {
