@@ -16,6 +16,9 @@ type Codex struct{}
 func (c *Codex) ID() string          { return "codex" }
 func (c *Codex) DisplayName() string { return "Codex" }
 func (c *Codex) Installable() bool   { return true }
+func (c *Codex) SupportsMCPElicitation() bool {
+	return true
+}
 
 func (c *Codex) Install(repoRoot string) error {
 	configPath := filepath.Join(repoRoot, config.CodexConfigRelPath)

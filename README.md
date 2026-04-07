@@ -85,22 +85,26 @@ The interactive setup will detect installed agents and let you select which ones
 
 ## Commands
 
+`<pattern>` can be a file path, folder path, glob pattern, or command pattern.
+Examples: `src/main.go`, `src/`, `**/*.env`, `git push --force*`.
+
 ```
 cordon init                          Initialise Cordon in the current repository
 cordon uninstall                     Uninstall Cordon from the current repository
+cordon status                        Show repository, policy, auth, and agent setup status
 cordon version
 
-cordon log [--since] [--until] [--date] [--limit] [--agent] [--file] [--allow] [--deny] [--granted] [--pass] [--follow] [--export csv]
+cordon log [-f|--follow] [-i|--interactive] [--since] [--until] [--date] [--limit] [--agent] [--file] [--allow] [--deny] [--granted] [--pass] [--export csv]
 
-cordon file add [--allow] [--prevent-read] <pattern>
+cordon file add [--allow] [--prevent-read] <pattern/path/folder/glob>
 cordon file list
-cordon file remove <pattern>
+cordon file remove <pattern/path/folder/glob>
 
-cordon command add [--allow] <pattern>
+cordon command add [--allow] <command-pattern>
 cordon command list
-cordon command remove <pattern>
+cordon command remove <command-pattern>
 
-cordon pass issue <target> [--duration 60m|24h|7d|1w|indefinite]
+cordon pass issue <pattern/path/folder/command> [--duration 60m|24h|7d|1w|indefinite]
 cordon pass list [--all]
 cordon pass revoke <pass-id>
 ```

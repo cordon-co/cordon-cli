@@ -14,6 +14,9 @@ type Cursor struct{}
 func (c *Cursor) ID() string          { return "cursor" }
 func (c *Cursor) DisplayName() string { return "Cursor" }
 func (c *Cursor) Installable() bool   { return true }
+func (c *Cursor) SupportsMCPElicitation() bool {
+	return true
+}
 
 func (c *Cursor) Install(repoRoot string) error {
 	// Hook in .cursor/hooks.json

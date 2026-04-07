@@ -57,20 +57,19 @@ export const CordonEnforcement = async ({ $, directory }) => {
 `
 
 // OpenCode configures the OpenCode agent via a JS plugin at
-// .opencode/plugins/cordon-interface.js and an MCP server entry in
-// .opencode/opencode.jsonc. The plugin hooks tool.execute.before to
-// enforce Cordon file rules.
+// .opencode/plugins/cordon-interface.js. The plugin hooks tool.execute.before
+// to enforce Cordon file rules.
 type OpenCode struct{}
 
 func (o *OpenCode) ID() string          { return "opencode" }
 func (o *OpenCode) DisplayName() string { return "OpenCode" }
 func (o *OpenCode) Installable() bool   { return true }
+func (o *OpenCode) SupportsMCPElicitation() bool {
+	return false
+}
 
 func (o *OpenCode) Install(repoRoot string) error {
-	if err := o.installPlugin(repoRoot); err != nil {
-		return err
-	}
-	return o.installMCP(repoRoot)
+	return o.installPlugin(repoRoot)
 }
 
 func (o *OpenCode) Remove(repoRoot string) error {
@@ -330,6 +329,12 @@ func (o *OpenCode) installMCP(repoRoot string) error {
 
 func (o *OpenCode) removeMCP(repoRoot string) error {
 	cfgPath := filepath.Join(repoRoot, openCodeConfigRelPath)
+
+	// Do not materialize a new config file during cleanup when one doesn't exist.
+	if _, err := os.Stat(cfgPath); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+
 	data, err := readOpenCodeConfig(cfgPath)
 	if err != nil {
 		return err
@@ -349,5 +354,14 @@ func (o *OpenCode) removeMCP(repoRoot string) error {
 	} else {
 		data["mcp"] = mcp
 	}
+
+	// If nothing remains after removing the Cordon MCP entry, remove the file.
+	if len(data) == 0 {
+		if err := os.Remove(cfgPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+
 	return writeOpenCodeConfig(cfgPath, data)
 }
