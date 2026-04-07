@@ -78,42 +78,50 @@ cordon init
 
 The interactive setup will detect installed agents and let you select which ones to enforce policies on.
 
-**2. Commit or ignore the config:**
-
-- To share policies with your team, commit the `.cordon/` directory and any agent config changes (e.g. `.claude/settings.local.json`, `.codex/`).
-- For personal use only, add `.cordon/` to your `.gitignore`.
-
 ## Commands
 
-`<pattern>` can be a file path, folder path, glob pattern, or command pattern.
-Examples: `src/main.go`, `src/`, `**/*.env`, `git push --force*`.
-
 ```
-cordon init                          Initialise Cordon in the current repository
-cordon uninstall                     Uninstall Cordon from the current repository
-cordon status                        Show repository, policy, auth, and agent setup status
+cordon init           [-y|--yes] [--agent]
+cordon uninstall
+cordon status
 cordon version
 
-cordon log [-f|--follow] [-i|--interactive] [--since] [--until] [--date] [--limit] [--agent] [--file] [--allow] [--deny] [--granted] [--pass] [--export csv]
+cordon log            [-i|--interactive]
+                      [-f|--follow]
+                      [--export csv]
+                      [--since] [--until] [--date] [--limit]
+                      [--agent] [--file] [--allow] [--deny] [--granted] [--pass]
 
-cordon file add [--allow] [--prevent-read] <pattern/path/folder/glob>
 cordon file list
+cordon file add <pattern/path/folder/glob> [--allow] [--prevent-read]
 cordon file remove <pattern/path/folder/glob>
 
-cordon command add [--allow] <command-pattern>
 cordon command list
+cordon command add <command-pattern> [--allow] 
 cordon command remove <command-pattern>
 
-cordon pass issue <pattern/path/folder/command> [--duration 60m|24h|7d|1w|indefinite]
 cordon pass list [--all]
+cordon pass issue <pattern/path/folder/command> [--duration 60m|24h|7d|1w|indefinite]
 cordon pass revoke <pass-id>
 ```
 
-All commands accept `--json` for structured output. Schemas not finalised at this time.
+- All commands accept `--json` for structured output. Schemas not finalised at this time.
+
+- `<pattern>` can be a file path, folder path, glob pattern, or command pattern.
+Examples: `src/main.go`, `src/`, `**/*.env`, `git push --force*`.
+
 
 ## Build
 
-Requires Go 1.22+.
+### Dev Build & Install (Standard development workflow)
+
+```sh
+./scripts/dev-install.sh
+# installs to ~/.local/bin/cordon by default
+# override with INSTALL_DIR=/usr/local/bin ./scripts/dev-install.sh
+```
+
+### Manual Build
 
 ```sh
 # current platform
@@ -123,15 +131,8 @@ make build
 make build-all VERSION=1.0.0
 ```
 
-Binaries are written to `build/`.
-
-## Dev Install
-
-```sh
-./scripts/dev-install.sh
-# installs to ~/.local/bin/cordon by default
-# override with INSTALL_DIR=/usr/local/bin ./scripts/dev-install.sh
-```
+- Binaries are written to `build/`.
+- Cordon CLI is being built against Go 1.22+.
 
 ## Test
 
