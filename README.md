@@ -67,6 +67,18 @@ curl -fsSL https://raw.githubusercontent.com/cordon-co/cordon-cli/main/scripts/i
 go install github.com/cordon-co/cordon-cli/cmd/cordon@latest
 ```
 
+## Auto Update Checks
+
+When running `cordon` interactively (without `--json` and not in `--mcp` mode), the CLI performs a quick GitHub release check at most once every 24 hours.
+
+- `~/.cordon/config.json` supports:
+  - `skip_update_check` (`true`/`false`) to disable daily checks
+  - `last_update_check` (RFC3339 timestamp), updated automatically after a check attempt
+- If a newer release is detected, Cordon prompts:
+  - `A new version of cordon-cli is available on github, install the update? [Y/n]:`
+  - `Y` (or Enter) runs the installer script
+  - `n` prints a reminder about `skip_update_check`
+
 ## Quick Start
 
 **1. Initialise Cordon in your repository:**
