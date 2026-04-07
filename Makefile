@@ -1,5 +1,5 @@
 VERSION ?= dev
-LDFLAGS := -ldflags "-X github.com/cordon-co/cordon-cli/cli/cmd.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X github.com/cordon-co/cordon-cli/cli/internal/buildinfo.Version=$(VERSION)"
 BUILD   := build
 OPENAPI_SPEC ?= ../openapi/cordon-v1.openapi.yaml
 OPENAPI_CONFIG := cli/internal/apicontract/oapi-codegen.yaml

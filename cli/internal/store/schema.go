@@ -8,6 +8,10 @@ import (
 // MigratePolicyDB creates all tables and indexes in the policy database if
 // they do not exist. Safe to call on every open — all statements are idempotent.
 func MigratePolicyDB(db *sql.DB) error {
+	if err := prepareDBMigration(db, "policy", currentPolicySchemaVersion); err != nil {
+		return err
+	}
+
 	stmts := []string{
 		// file_rules — one row per protected file, folder, or glob pattern.
 		//
@@ -99,12 +103,16 @@ func MigratePolicyDB(db *sql.DB) error {
 		}
 	}
 
-	return nil
+	return finalizeDBMigration(db, currentPolicySchemaVersion)
 }
 
 // MigrateDataDB creates all tables and indexes in the data database if they
 // do not exist. Safe to call on every open — all statements are idempotent.
 func MigrateDataDB(db *sql.DB) error {
+	if err := prepareDBMigration(db, "data", currentDataSchemaVersion); err != nil {
+		return err
+	}
+
 	stmts := []string{
 		// hook_log — one row per PreToolUse hook invocation.
 		//
@@ -280,7 +288,7 @@ func MigrateDataDB(db *sql.DB) error {
 		return err
 	}
 
-	return nil
+	return finalizeDBMigration(db, currentDataSchemaVersion)
 }
 
 // isDuplicateColumn returns true if the error is SQLite's "duplicate column name" error,

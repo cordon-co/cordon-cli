@@ -17,7 +17,7 @@ BUILD_DIR="build"
 BINARY="${BUILD_DIR}/cordon"
 
 echo "Building cordon (dev)..."
-go build -ldflags "-X github.com/cordon-co/cordon-cli/cli/cmd.Version=dev" -o "$BINARY" ./cmd/cordon
+go build -ldflags "-X github.com/cordon-co/cordon-cli/cli/internal/buildinfo.Version=dev" -o "$BINARY" ./cmd/cordon
 
 mkdir -p "$INSTALL_DIR"
 cp "$BINARY" "${INSTALL_DIR}/cordon"

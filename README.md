@@ -55,6 +55,12 @@ curl -fsSL cordon.sh/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/cordon-co/cordon-cli/main/scripts/install.sh | sh
 ```
 
+**Install a specific version:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cordon-co/cordon-cli/main/scripts/install.sh | CORDON_VERSION=v0.1.0 sh
+```
+
 **With Go (requires ~/go/bin on PATH):**
 
 ```sh

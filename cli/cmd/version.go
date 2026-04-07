@@ -3,12 +3,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/cordon-co/cordon-cli/cli/internal/buildinfo"
 	"github.com/cordon-co/cordon-cli/cli/internal/flags"
 	"github.com/spf13/cobra"
 )
-
-// Version is set at build time via -ldflags "-X github.com/cordon-co/cordon-cli/cmd.Version=<tag>".
-var Version = "dev"
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
@@ -16,10 +14,10 @@ var versionCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if flags.JSON {
-			fmt.Printf(`{"version":%q}`+"\n", Version)
+			fmt.Printf(`{"version":%q}`+"\n", buildinfo.Version)
 			return nil
 		}
-		fmt.Println(Version)
+		fmt.Println(buildinfo.Version)
 		return nil
 	},
 }
