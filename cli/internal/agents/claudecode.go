@@ -12,6 +12,9 @@ type ClaudeCode struct{}
 func (c *ClaudeCode) ID() string          { return "claude-code" }
 func (c *ClaudeCode) DisplayName() string { return "Claude Code" }
 func (c *ClaudeCode) Installable() bool   { return true }
+func (c *ClaudeCode) SupportsMCPElicitation() bool {
+	return true
+}
 
 func (c *ClaudeCode) Install(repoRoot string) error {
 	// Hook + MCP permissions in .claude/settings.local.json

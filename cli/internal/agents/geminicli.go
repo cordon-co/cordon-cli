@@ -14,6 +14,9 @@ type GeminiCLI struct{}
 func (g *GeminiCLI) ID() string          { return "gemini-cli" }
 func (g *GeminiCLI) DisplayName() string { return "Gemini CLI" }
 func (g *GeminiCLI) Installable() bool   { return true }
+func (g *GeminiCLI) SupportsMCPElicitation() bool {
+	return false
+}
 
 func (g *GeminiCLI) Install(repoRoot string) error {
 	settingsPath := filepath.Join(repoRoot, config.GeminiSettingsRelPath)

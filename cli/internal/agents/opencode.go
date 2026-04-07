@@ -57,20 +57,19 @@ export const CordonEnforcement = async ({ $, directory }) => {
 `
 
 // OpenCode configures the OpenCode agent via a JS plugin at
-// .opencode/plugins/cordon-interface.js and an MCP server entry in
-// .opencode/opencode.jsonc. The plugin hooks tool.execute.before to
-// enforce Cordon file rules.
+// .opencode/plugins/cordon-interface.js. The plugin hooks tool.execute.before
+// to enforce Cordon file rules.
 type OpenCode struct{}
 
 func (o *OpenCode) ID() string          { return "opencode" }
 func (o *OpenCode) DisplayName() string { return "OpenCode" }
 func (o *OpenCode) Installable() bool   { return true }
+func (o *OpenCode) SupportsMCPElicitation() bool {
+	return false
+}
 
 func (o *OpenCode) Install(repoRoot string) error {
-	if err := o.installPlugin(repoRoot); err != nil {
-		return err
-	}
-	return o.installMCP(repoRoot)
+	return o.installPlugin(repoRoot)
 }
 
 func (o *OpenCode) Remove(repoRoot string) error {
