@@ -29,11 +29,13 @@ var logDeny bool
 var logGranted bool
 var logPass bool
 var logSince string
+var logUntil string
 var logDate string
 var logAgent string
 var logFollow bool
 var logInteractive bool
 var logExport string
+var logLimit int
 
 // logCmd — named logCmd to avoid shadowing the standard library "log" package.
 var logCmd = &cobra.Command{
@@ -50,11 +52,13 @@ func init() {
 	logCmd.Flags().BoolVar(&logGranted, "granted", false, "Show hook events authorized by a pass")
 	logCmd.Flags().BoolVar(&logPass, "pass", false, "Show pass lifecycle events (issue, revoke, expire)")
 	logCmd.Flags().StringVar(&logSince, "since", "", "Show entries newer than duration (e.g. 24h, 7d, 90m)")
+	logCmd.Flags().StringVar(&logUntil, "until", "", "Show entries older than time (RFC3339) or date (YYYY-MM-DD)")
 	logCmd.Flags().StringVar(&logDate, "date", "", "Show entries for a specific date (e.g. 2026-03-22)")
 	logCmd.Flags().StringVar(&logAgent, "agent", "", "Filter by agent platform (e.g. claude-code, cursor)")
 	logCmd.Flags().BoolVarP(&logFollow, "follow", "f", false, "Stream new entries in real-time")
 	logCmd.Flags().BoolVarP(&logInteractive, "interactive", "i", false, "Open live interactive log viewer")
 	logCmd.Flags().StringVar(&logExport, "export", "", "Export format: csv")
+	logCmd.Flags().IntVar(&logLimit, "limit", 0, "Maximum number of entries to return (0 = no limit)")
 }
 
 func runLog(cmd *cobra.Command, args []string) error {
@@ -62,8 +66,14 @@ func runLog(cmd *cobra.Command, args []string) error {
 	if logSince != "" && logDate != "" {
 		return fmt.Errorf("log: --since and --date are mutually exclusive")
 	}
+	if logUntil != "" && logDate != "" {
+		return fmt.Errorf("log: --until and --date are mutually exclusive")
+	}
 	if logFollow && logExport != "" {
 		return fmt.Errorf("log: --follow and --export are mutually exclusive")
+	}
+	if logFollow && logUntil != "" {
+		return fmt.Errorf("log: --follow and --until are mutually exclusive")
 	}
 	if logInteractive && logExport != "" {
 		return fmt.Errorf("log: --interactive and --export are mutually exclusive")
@@ -73,6 +83,15 @@ func runLog(cmd *cobra.Command, args []string) error {
 	}
 	if logInteractive && flags.JSON {
 		return fmt.Errorf("log: --interactive cannot be used with --json")
+	}
+	if flags.JSON && logExport != "" {
+		return fmt.Errorf("log: --json and --export are mutually exclusive")
+	}
+	if logLimit < 0 {
+		return fmt.Errorf("log: --limit must be >= 0")
+	}
+	if logExport != "" && logExport != "csv" {
+		return fmt.Errorf("log: unsupported export format %q (supported: csv)", logExport)
 	}
 
 	root, warn, err := reporoot.Find()
@@ -105,6 +124,7 @@ func runLog(cmd *cobra.Command, args []string) error {
 		Granted: logGranted,
 		Pass:    logPass,
 		Agent:   logAgent,
+		Limit:   logLimit,
 	}
 
 	// Time window: --date, --since, or default 24h.
@@ -124,6 +144,16 @@ func runLog(cmd *cobra.Command, args []string) error {
 	} else if !logFollow {
 		// Default: last 24 hours.
 		filter.Since = time.Now().Add(-24 * time.Hour)
+	}
+	if logUntil != "" {
+		until, err := parseUntilTime(logUntil)
+		if err != nil {
+			return fmt.Errorf("log: --until: %w", err)
+		}
+		filter.Until = until
+	}
+	if !filter.Since.IsZero() && !filter.Until.IsZero() && !filter.Since.Before(filter.Until) {
+		return fmt.Errorf("log: invalid time window: --since must be earlier than --until")
 	}
 
 	if logFollow {
@@ -453,4 +483,18 @@ func parseSinceDuration(s string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("invalid duration %q: %w", s, err)
 	}
 	return time.Now().Add(-d), nil
+}
+
+// parseUntilTime parses an absolute upper bound time.
+// Accepted forms:
+//   - RFC3339 timestamp (e.g. 2026-03-22T15:04:05Z)
+//   - local date in YYYY-MM-DD, interpreted as the end of that day (exclusive).
+func parseUntilTime(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if day, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
+		return day.Add(24 * time.Hour), nil
+	}
+	return time.Time{}, fmt.Errorf("invalid time %q (expected RFC3339 or YYYY-MM-DD)", s)
 }

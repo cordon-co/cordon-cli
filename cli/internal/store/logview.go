@@ -17,6 +17,7 @@ type LogFilter struct {
 	File    string    // substring match on file_path; empty = no filter
 	Since   time.Time // zero = no filter
 	Until   time.Time // zero = no filter; exclusive upper bound
+	Limit   int       // 0 = no limit
 	Agent   string    // exact match on agent; empty = no filter
 	Allow   bool      // include hook_allow events
 	Deny    bool      // include hook_deny events
@@ -83,6 +84,9 @@ func ListUnifiedLog(db *sql.DB, f LogFilter) ([]UnifiedEntry, error) {
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Time.After(entries[j].Time)
 	})
+	if f.Limit > 0 && len(entries) > f.Limit {
+		entries = entries[:f.Limit]
+	}
 	return entries, nil
 }
 
