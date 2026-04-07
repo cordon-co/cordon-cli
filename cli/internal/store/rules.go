@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -177,7 +178,24 @@ func commandMatchesPattern(command, pattern string) bool {
 	matched, err := filepath.Match(pattern, command)
 	if err != nil {
 		// Invalid pattern — treat as no match.
-		return false
+		matched = false
 	}
-	return matched
+	if matched {
+		return true
+	}
+
+	// For plain patterns without glob metacharacters, treat the pattern as a
+	// command prefix so "echo" matches "echo hello" and "git push" matches
+	// "git push origin main".
+	if !hasGlobMeta(pattern) {
+		return strings.HasPrefix(command, pattern+" ")
+	}
+
+	return false
+}
+
+var globMetaRegex = regexp.MustCompile(`[*?\[]`)
+
+func hasGlobMeta(pattern string) bool {
+	return globMetaRegex.MatchString(pattern)
 }
