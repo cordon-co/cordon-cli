@@ -329,6 +329,12 @@ func (o *OpenCode) installMCP(repoRoot string) error {
 
 func (o *OpenCode) removeMCP(repoRoot string) error {
 	cfgPath := filepath.Join(repoRoot, openCodeConfigRelPath)
+
+	// Do not materialize a new config file during cleanup when one doesn't exist.
+	if _, err := os.Stat(cfgPath); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+
 	data, err := readOpenCodeConfig(cfgPath)
 	if err != nil {
 		return err
@@ -348,5 +354,14 @@ func (o *OpenCode) removeMCP(repoRoot string) error {
 	} else {
 		data["mcp"] = mcp
 	}
+
+	// If nothing remains after removing the Cordon MCP entry, remove the file.
+	if len(data) == 0 {
+		if err := os.Remove(cfgPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+
 	return writeOpenCodeConfig(cfgPath, data)
 }
