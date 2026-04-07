@@ -21,11 +21,12 @@ type MatchedRule struct {
 // cwd is the agent working directory used to locate the policy database.
 //
 // Return values:
-//   - true,  nil, false   — command is allowed
-//   - false, rule, notify — command is blocked; rule describes the matching rule
+//   - true,  "", nil, false      — command is allowed
+//   - true,  passID, nil, notify — command is allowed via an active pass
+//   - false, "", rule, notify    — command is blocked; rule describes the matching rule
 //
 // A nil CommandChecker allows all commands (fail-open).
-type CommandChecker func(command, cwd string) (allowed bool, matched *MatchedRule, notify bool)
+type CommandChecker func(command, cwd string) (allowed bool, passID string, matched *MatchedRule, notify bool)
 
 // builtinRule is a command rule compiled into the binary.
 type builtinRule struct {
@@ -128,11 +129,38 @@ func splitCompoundCommand(command string) []string {
 }
 
 // commandRuleDenyReason returns the denial message for a matched command rule.
-func commandRuleDenyReason(rule *MatchedRule) string {
+func commandRuleDenyReason(rule *MatchedRule, agent string) string {
+	if supportsMCPElicitation(agent) {
+		return fmt.Sprintf(
+			"CORDON POLICY: this command is prohibited by a Cordon command rule. "+
+				"Rule String: %s. Rule Type: command deny. "+
+				"To request command access, you (agent) should use the cordon_request_access MCP tool which will ask the user for approval. "+
+				"Alternatively, ask the user to grant access themselves using the command cordon pass issue <target>. "+
+				"If the user says they have issued the pass, you may proceed with running this command. "+
+				"Do not attempt to execute this command through any alternative method. "+
+				"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You should use the MCP or ask the user for a pass. "+
+				"This is an enforced policy restriction, not a technical error.",
+			rule.Pattern,
+		)
+	}
+
 	return fmt.Sprintf(
-		"CORDON POLICY: This command is prohibited by a Cordon command rule. "+
-			"Rule: %s. "+
+		"CORDON POLICY: this command is prohibited by a Cordon command rule. "+
+			"Rule String: %s. Rule Type: command deny. "+
+			"To request command access, you (agent) should ask the user to grant access themselves using the command cordon pass issue <target>. "+
+			"If the user says they have issued the pass, you may proceed with running this command. "+
+			"Do not attempt to execute this command through any alternative method. "+
+			"Do NOT run the cordon shell command cordon command directly — agents are prohibited from executing cordon CLI commands. You should ask the user for a pass. "+
 			"This is an enforced policy restriction, not a technical error.",
 		rule.Pattern,
 	)
+}
+
+func supportsMCPElicitation(agent string) bool {
+	switch strings.ToLower(strings.TrimSpace(agent)) {
+	case "gemini", "gemini-cli", "opencode":
+		return false
+	default:
+		return true
+	}
 }

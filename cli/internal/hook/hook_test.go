@@ -19,7 +19,7 @@ func TestEvaluate_DirectFileDenyPopulatesReason(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, checker, nil, nil)
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, checker, nil, nil, "")
 	if err != ErrDenied {
 		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
 	}
@@ -56,7 +56,7 @@ func TestEvaluate_ApplyPatchDenyPopulatesReason(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, checker, nil, nil)
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, checker, nil, nil, "")
 	if err != ErrDenied {
 		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
 	}

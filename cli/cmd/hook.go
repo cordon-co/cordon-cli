@@ -47,7 +47,7 @@ var hookCmd = &cobra.Command{
 		checker := buildPolicyChecker()
 		rdChecker := buildReadChecker()
 		cmdChecker := buildCommandChecker()
-		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker, rdChecker, cmdChecker)
+		event, err := hook.Evaluate(os.Stdin, os.Stdout, os.Stderr, checker, rdChecker, cmdChecker, hookAgent)
 		err = applySecretDetection(event, err, os.Stdout, os.Stderr, secretScanner, action)
 
 		// Log every invocation. Logging failures are non-fatal (fail-open).
@@ -194,36 +194,50 @@ func buildReadChecker() hook.ReadChecker {
 // from the policy database. Built-in rules are always checked first within
 // hook.evaluateBash itself, so this checker only needs to handle custom rules.
 //
-// Fails open on any infrastructure error.
+// Fails open when policy lookup fails. If a deny command rule matches and pass
+// lookup infrastructure fails, the command remains denied.
 func buildCommandChecker() hook.CommandChecker {
-	return func(command, cwd string) (allowed bool, matched *hook.MatchedRule, notify bool) {
+	return func(command, cwd string) (allowed bool, passID string, matched *hook.MatchedRule, notify bool) {
 		absRoot, err := resolveRepoRoot(cwd)
 		if err != nil {
-			return true, nil, false // fail-open
+			return true, "", nil, false // fail-open
 		}
 
 		policyDB, err := store.OpenPolicyDB(absRoot)
 		if err != nil {
-			return true, nil, false // fail-open
+			return true, "", nil, false // fail-open
 		}
 		defer policyDB.Close()
 
 		if err := store.MigratePolicyDB(policyDB); err != nil {
-			return true, nil, false // fail-open
+			return true, "", nil, false // fail-open
 		}
 
 		rule, err := store.MatchCommandRule(policyDB, command)
 		if err != nil || rule == nil {
-			return true, nil, false // fail-open or no match
+			return true, "", nil, false // fail-open or no match
 		}
 
 		notify = rule.Notify
-
-		return false, &hook.MatchedRule{
+		matched = &hook.MatchedRule{
 			Pattern:       rule.Pattern,
 			RuleType:      rule.RuleType,
 			RuleAuthority: rule.RuleAuthority,
-		}, notify
+		}
+
+		dataDB, err := store.OpenDataDB(absRoot)
+		if err == nil {
+			defer dataDB.Close()
+
+			if err := store.MigrateDataDB(dataDB); err == nil {
+				pass, err := store.ActivePassForCommand(dataDB, command)
+				if err == nil && pass != nil {
+					return true, pass.ID, nil, notify
+				}
+			}
+		}
+
+		return false, "", matched, notify
 	}
 }
 

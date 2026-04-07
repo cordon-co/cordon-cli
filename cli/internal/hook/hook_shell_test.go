@@ -34,16 +34,16 @@ func TestEvaluate_RunInTerminalAppliesCommandRules(t *testing.T) {
   "cwd": "/Users/tom/Projects/cordon"
 }`
 
-	cmdChecker := func(command, cwd string) (bool, *MatchedRule, bool) {
+	cmdChecker := func(command, cwd string) (bool, string, *MatchedRule, bool) {
 		if strings.TrimSpace(command) == "git status" {
-			return false, &MatchedRule{Pattern: "git status", RuleType: "deny", RuleAuthority: "standard"}, false
+			return false, "", &MatchedRule{Pattern: "git status", RuleType: "deny", RuleAuthority: "standard"}, false
 		}
-		return true, nil, false
+		return true, "", nil, false
 	}
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, nil, cmdChecker)
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, nil, cmdChecker, "")
 	if err != ErrDenied {
 		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
 	}
@@ -77,7 +77,7 @@ func TestEvaluate_RunInTerminalUsesCwdAwareReadChecks(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, rdChecker, nil)
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, rdChecker, nil, "")
 	if err != ErrDenied {
 		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
 	}
@@ -86,5 +86,39 @@ func TestEvaluate_RunInTerminalUsesCwdAwareReadChecks(t *testing.T) {
 	}
 	if event.FilePath != "/repo/scripts/README.md" {
 		t.Fatalf("event.FilePath = %q, want /repo/scripts/README.md", event.FilePath)
+	}
+}
+
+func TestEvaluate_RunInTerminalRecordsCommandPass(t *testing.T) {
+	payload := `{
+  "tool_name": "run_in_terminal",
+  "tool_input": {"command":"git push --force origin main"},
+  "cwd": "/repo"
+}`
+
+	cmdChecker := func(command, cwd string) (bool, string, *MatchedRule, bool) {
+		if strings.TrimSpace(command) == "git push --force origin main" {
+			return true, "pass-cmd-123", nil, true
+		}
+		return true, "", nil, false
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, nil, cmdChecker, "")
+	if err != nil {
+		t.Fatalf("Evaluate error = %v, want nil", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want non-nil allow event")
+	}
+	if event.Decision != DecisionAllow {
+		t.Fatalf("event.Decision = %q, want %q", event.Decision, DecisionAllow)
+	}
+	if event.PassID != "pass-cmd-123" {
+		t.Fatalf("event.PassID = %q, want pass-cmd-123", event.PassID)
+	}
+	if !event.Notify {
+		t.Fatal("event.Notify = false, want true")
 	}
 }

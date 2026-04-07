@@ -105,9 +105,9 @@ func RevokePass(db *sql.DB, passID, revokedBy string) (bool, error) {
 // matching — consistent with how file rules are stored (relative patterns).
 //
 // A pass covers filePath if:
-//   - The pass is file-scoped (file_path != '') and matches filePath (exact or
+//   - The pass is file-scoped (file_path != ”) and matches filePath (exact or
 //     relative), OR
-//   - The pass is rule-wide (file_path == '') and its file rule pattern covers filePath.
+//   - The pass is rule-wide (file_path == ”) and its file rule pattern covers filePath.
 func ActivePassForPath(db *sql.DB, filePath, repoRoot string) (*Pass, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -146,6 +146,39 @@ func ActivePassForPath(db *sql.DB, filePath, repoRoot string) (*Pass, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: active pass scan: %w", err)
+	}
+	return nil, nil
+}
+
+// ActivePassForCommand returns the first active, non-expired pass whose pattern
+// matches command, or nil if none exists.
+func ActivePassForCommand(db *sql.DB, command string) (*Pass, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	rows, err := db.Query(
+		`SELECT id, file_rule_id, pattern, file_path, issued_to, issued_by, status,
+		        duration_minutes, issued_at, expires_at, revoked_at, revoked_by
+		 FROM passes
+		 WHERE status = 'active'
+		   AND (expires_at = '' OR expires_at > ?)`,
+		now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: active command pass query: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		p, err := scanPass(rows)
+		if err != nil {
+			return nil, err
+		}
+		if commandMatchesPattern(command, p.Pattern) {
+			return &p, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: active command pass scan: %w", err)
 	}
 	return nil, nil
 }

@@ -35,14 +35,17 @@ func Run(_ context.Context) error {
 
 	requestAccessTool := mcp.NewTool("cordon_request_access",
 		mcp.WithDescription(
-			"Request temporary write access to a file protected by a Cordon file policy. "+
+			"Request temporary write access to a target protected by a Cordon policy rule. "+
 				"Call this tool when a Cordon hook has denied a write operation. "+
 				"The user will be asked to approve or deny the request. "+
 				"Returns a pass ID and expiry time on success.",
 		),
-		mcp.WithString("file_path",
+		mcp.WithString("rule_str",
 			mcp.Required(),
-			mcp.Description("Absolute or repo-relative path of the file access is needed for."),
+			mcp.Description("Rule target string from the deny reason (file path/pattern or command string)."),
+		),
+		mcp.WithString("file_path",
+			mcp.Description("Deprecated compatibility field. Use rule_str instead."),
 		),
 		mcp.WithString("reason",
 			mcp.Description("Brief explanation of why write access is needed (optional)."),
@@ -58,17 +61,22 @@ func Run(_ context.Context) error {
 // confirmation before issuing a 60-minute pass for the requested file.
 func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		rawPath, err := req.RequireString("file_path")
+		target, err := req.RequireString("rule_str")
 		if err != nil {
-			return nil, fmt.Errorf("file_path is required")
+			// Backward compatibility for older clients.
+			legacy, legacyErr := req.RequireString("file_path")
+			if legacyErr != nil {
+				return nil, fmt.Errorf("rule_str is required")
+			}
+			target = legacy
 		}
 
 		reason, _ := req.RequireString("reason")
 
 		// Normalize to canonical repo-relative form when possible.
-		filePath := store.NormalizeFilePath(rawPath, absRoot)
+		filePath := store.NormalizeFilePath(target, absRoot)
 
-		// Open the policy database and look up the covering file rule.
+		// Open the policy database and look up the covering file/command rule.
 		policyDB, err := store.OpenPolicyDB(absRoot)
 		if err != nil {
 			return nil, fmt.Errorf("cordon: open policy database: %w", err)
@@ -79,20 +87,41 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 			return nil, fmt.Errorf("cordon: migrate policy database: %w", err)
 		}
 
-		rule, err := store.FileRuleForPath(policyDB, filePath, absRoot)
+		fileRule, err := store.FileRuleForPath(policyDB, filePath, absRoot)
 		if err != nil {
 			return nil, fmt.Errorf("cordon: file rule lookup: %w", err)
 		}
-		if rule == nil {
+		var commandRule *store.CommandRule
+		if fileRule == nil {
+			commandRule, err = store.MatchCommandRule(policyDB, target)
+			if err != nil {
+				return nil, fmt.Errorf("cordon: command rule lookup: %w", err)
+			}
+		}
+		if fileRule == nil && commandRule == nil {
 			return mcp.NewToolResultError(
-				fmt.Sprintf("%q is not covered by any Cordon file rule — no pass can be issued.", filePath),
+				fmt.Sprintf("%q is not covered by any Cordon file rule or command rule — no pass can be issued.", target),
 			), nil
+		}
+
+		ruleType := "file"
+		rulePattern := ""
+		ruleID := ""
+		passFilePath := filePath
+		if fileRule != nil {
+			rulePattern = fileRule.Pattern
+			ruleID = fileRule.ID
+		} else {
+			ruleType = "command"
+			rulePattern = commandRule.Pattern
+			ruleID = commandRule.ID
+			passFilePath = ""
 		}
 
 		// Ask the user for confirmation via elicitation.
 		msg := fmt.Sprintf(
-			"Your agent is requesting read/write access to a file protected by a Cordon file policy.\n\nFile: %s\nFile Rule: %s",
-			filePath, rule.Pattern,
+			"Your agent is requesting read/write access to a target protected by a Cordon policy.\n\nTarget: %s\nRule Type: %s\nRule: %s",
+			target, ruleType, rulePattern,
 		)
 		if reason != "" {
 			msg += fmt.Sprintf("\nAgent's Reason: %s", reason)
@@ -158,9 +187,9 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 		}
 
 		p := store.Pass{
-			FileRuleID:      rule.ID,
-			Pattern:         rule.Pattern,
-			FilePath:        filePath,
+			FileRuleID:      ruleID,
+			Pattern:         rulePattern,
+			FilePath:        passFilePath,
 			IssuedTo:        "agent",
 			IssuedBy:        store.CurrentOSUser(),
 			Status:          "active",
@@ -180,7 +209,7 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 		}
 		var issued store.Pass
 		for _, lp := range passes {
-			if lp.FilePath == filePath && lp.IssuedAt == now {
+			if lp.Pattern == rulePattern && lp.FilePath == passFilePath && lp.IssuedAt == now {
 				issued = lp
 				break
 			}
@@ -189,8 +218,8 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 		// Audit log — failures are non-fatal.
 		_ = store.InsertAudit(dataDB, store.AuditEntry{
 			EventType:  "pass_issue",
-			FilePath:   filePath,
-			FileRuleID: rule.ID,
+			FilePath:   target,
+			FileRuleID: ruleID,
 			PassID:     issued.ID,
 			User:       store.CurrentOSUser(),
 			Agent:      "mcp",
@@ -198,8 +227,8 @@ func makeRequestAccessHandler(s *server.MCPServer, absRoot string) server.ToolHa
 		})
 
 		result := fmt.Sprintf(
-			"Access granted for %s\nPass ID:    %s\nExpires:    %s\nFile Rule:  %s",
-			filePath, issued.ID, expiresAtStr, rule.Pattern,
+			"Access granted for %s\nPass ID:    %s\nExpires:    %s\nRule Type:  %s\nRule:       %s",
+			target, issued.ID, expiresAtStr, ruleType, rulePattern,
 		)
 		return mcp.NewToolResultText(result), nil
 	}
