@@ -3,6 +3,7 @@ package cmd
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -70,5 +71,37 @@ func TestSyncDataPush_IncludesSecretFields(t *testing.T) {
 	}
 	if (*got.HookLog)[0].SecretRuleIds == nil || *(*got.HookLog)[0].SecretRuleIds != `["github-pat"]` {
 		t.Fatalf("secret_rule_ids = %v, want [\"github-pat\"]", (*got.HookLog)[0].SecretRuleIds)
+	}
+}
+
+func TestMapPerimeterLookupError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "402 payment required",
+			err:  &api.APIError{StatusCode: 402, Code: "payment_required"},
+			want: "repository access requires an active paid Cordon plan for this account",
+		},
+		{
+			name: "other api error",
+			err:  &api.APIError{StatusCode: 500, Code: "server_error"},
+			want: "perimeter lookup: API error 500: server_error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mapPerimeterLookupError(tt.err)
+			if got.Error() != tt.want {
+				t.Fatalf("mapPerimeterLookupError() = %q, want %q", got.Error(), tt.want)
+			}
+
+			if tt.name == "other api error" && !errors.Is(got, tt.err) {
+				t.Fatalf("expected wrapped error to match original")
+			}
+		})
 	}
 }

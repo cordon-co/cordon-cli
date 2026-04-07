@@ -178,7 +178,7 @@ func doSync(absRoot string, logWriter io.Writer) (*syncResult, error) {
 	// Lookup perimeter on the server.
 	pid, ok, err := policysync.LookupPerimeter(client, perimeterID)
 	if err != nil {
-		return nil, fmt.Errorf("perimeter lookup: %w", err)
+		return nil, mapPerimeterLookupError(err)
 	}
 	if !ok {
 		return nil, fmt.Errorf("this repository is not registered in your Cordon dashboard")
@@ -230,6 +230,14 @@ func doSync(absRoot string, logWriter io.Writer) (*syncResult, error) {
 		PolicyPushed: pushed,
 		DataPushed:   dataPushed,
 	}, nil
+}
+
+func mapPerimeterLookupError(err error) error {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == 402 {
+		return fmt.Errorf("repository access requires an active paid Cordon plan for this account")
+	}
+	return fmt.Errorf("perimeter lookup: %w", err)
 }
 
 // syncPolicyPush sends unpushed local events to the server.
