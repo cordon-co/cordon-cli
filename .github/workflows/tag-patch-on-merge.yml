@@ -47,9 +47,7 @@ jobs:
             patch=0
           else
             version="${latest_tag#v}"
-            IFS='.' read -r major minor patch <<EOF
-${version}
-EOF
+            IFS='.' read -r major minor patch <<< "${version}"
 
             if [ -z "${major}" ] || [ -z "${minor}" ] || [ -z "${patch}" ]; then
               echo "Latest tag '${latest_tag}' is not in vX.Y.Z format"
