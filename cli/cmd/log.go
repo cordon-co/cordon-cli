@@ -57,7 +57,7 @@ func init() {
 	logCmd.Flags().StringVar(&logAgent, "agent", "", "Filter by agent platform (e.g. claude-code, cursor)")
 	logCmd.Flags().BoolVarP(&logFollow, "follow", "f", false, "Stream new entries in real-time")
 	logCmd.Flags().BoolVarP(&logInteractive, "interactive", "i", false, "Open live interactive log viewer")
-	logCmd.Flags().StringVar(&logExport, "export", "", "Export format: csv")
+	logCmd.Flags().StringVar(&logExport, "export", "", "Export log entries as CSV to the given file path")
 	logCmd.Flags().IntVar(&logLimit, "limit", 0, "Maximum number of entries to return (0 = no limit)")
 }
 
@@ -89,9 +89,6 @@ func runLog(cmd *cobra.Command, args []string) error {
 	}
 	if logLimit < 0 {
 		return fmt.Errorf("log: --limit must be >= 0")
-	}
-	if logExport != "" && logExport != "csv" {
-		return fmt.Errorf("log: unsupported export format %q (supported: csv)", logExport)
 	}
 
 	root, warn, err := reporoot.Find()
@@ -189,8 +186,8 @@ func runLog(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if logExport == "csv" {
-		return writeLogCSV(os.Stdout, entries)
+	if logExport != "" {
+		return writeLogCSVFile(logExport, entries)
 	}
 
 	if len(entries) == 0 {
@@ -444,6 +441,42 @@ func writeLogCSV(w io.Writer, entries []store.UnifiedEntry) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+func writeLogCSVFile(path string, entries []store.UnifiedEntry) error {
+	resolvedPath, err := resolveExportPath(path)
+	if err != nil {
+		return fmt.Errorf("log: --export: %w", err)
+	}
+
+	f, err := os.Create(resolvedPath)
+	if err != nil {
+		return fmt.Errorf("log: --export: create %q: %w", resolvedPath, err)
+	}
+	defer f.Close()
+
+	if err := writeLogCSV(f, entries); err != nil {
+		return fmt.Errorf("log: --export: write %q: %w", resolvedPath, err)
+	}
+	return nil
+}
+
+func resolveExportPath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("file path cannot be empty")
+	}
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home directory: %w", err)
+		}
+		if path == "~" {
+			path = home
+		} else {
+			path = filepath.Join(home, strings.TrimPrefix(path, "~/"))
+		}
+	}
+	return path, nil
 }
 
 // formatTimestamp returns a relative "Xh ago" / "Ym ago" string for entries
