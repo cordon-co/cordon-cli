@@ -156,3 +156,35 @@ func TestMatchCommandRule_NoMatch(t *testing.T) {
 		t.Errorf("expected no match, got rule %q", rule.Pattern)
 	}
 }
+
+func TestMatchCommandRule_ArgvDoesNotReorderWhenPositionalSuffixPresent(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "git push --force origin", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := MatchCommandRule(db, "git push origin --force")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule != nil {
+		t.Fatalf("expected no match when positional suffix exists after option in pattern, got %q", rule.Pattern)
+	}
+}
+
+func TestMatchCommandRule_ParseFailureFallsBackToStringMatch(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "echo *", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unterminated quote is invalid shell; argv matcher should fail closed, while
+	// string matcher still covers this pattern.
+	rule, err := MatchCommandRule(db, `echo "unterminated`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule == nil {
+		t.Fatal("expected string matcher fallback to match parse-failed command")
+	}
+}

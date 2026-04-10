@@ -68,3 +68,20 @@ func TestCommandRuleDenyReason_OmitsMCPForGeminiAndOpenCode(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckBuiltinRules_DenyCordonCommands(t *testing.T) {
+	rule := CheckBuiltinRules("cordon status")
+	if rule == nil {
+		t.Fatal("expected built-in deny rule for cordon status, got nil")
+	}
+	if rule.Pattern != "cordon *" {
+		t.Fatalf("rule.Pattern = %q, want %q", rule.Pattern, "cordon *")
+	}
+}
+
+func TestCheckBuiltinRules_AllowOverridesDenyForCordonHook(t *testing.T) {
+	rule := CheckBuiltinRules("cordon hook")
+	if rule != nil {
+		t.Fatalf("expected built-in allow override for cordon hook, got deny rule %q", rule.Pattern)
+	}
+}
