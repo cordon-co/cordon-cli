@@ -111,6 +111,11 @@ cordon pass revoke <pass-id>
 Examples: `src/main.go`, `src/`, `**/*.env`, `git push --force*`.
 
 
+## Documentation
+
+- [CLI Reference](docs/cli-reference.md)
+- [Project Overview and Concepts](docs/project-overview-and-concepts.md)
+
 ## Build
 
 ### Dev Build & Install (Standard development workflow)
