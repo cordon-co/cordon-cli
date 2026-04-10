@@ -84,6 +84,36 @@ func TestFileRuleForPath_DoubleStarRecursiveGlobNoMatch(t *testing.T) {
 	}
 }
 
+func TestFileRuleForPath_DoubleStarMidPattern(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddFileRule(db, "src/**/secrets/*.pem", "deny", "standard", "test", false); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := FileRuleForPath(db, "src/app/v1/secrets/key.pem", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule == nil {
+		t.Fatal("expected src/**/secrets/*.pem to match nested path, got nil")
+	}
+}
+
+func TestFileRuleForPath_DoubleStarSuffixPattern(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddFileRule(db, "config/**", "deny", "standard", "test", false); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := FileRuleForPath(db, "config/prod/app.yml", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule == nil {
+		t.Fatal("expected config/** to match nested config path, got nil")
+	}
+}
+
 func TestFileRuleForPath_AllowOverridesDeny(t *testing.T) {
 	db := newTestPolicyDB(t)
 	if _, err := AddFileRule(db, "src", "deny", "standard", "test", false); err != nil {
