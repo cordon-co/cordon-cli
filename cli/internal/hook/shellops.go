@@ -77,69 +77,80 @@ func analyzeShellCommand(command, cwd string) shellAnalysis {
 		if seg == "" {
 			continue
 		}
+		// Analyze the top-level segment; top-level cd affects subsequent segments.
+		effectiveCwd = analyzeSegmentOps(&a, seg, effectiveCwd)
 
-		a.Ops = append(a.Ops, shellOp{Type: shellOpExec, Command: seg, Cwd: effectiveCwd, Source: "parser"})
-
-		argv, ok := parseShellArgv(seg)
-		if !ok || len(argv) == 0 {
-			a.Ambiguity = append(a.Ambiguity, "argv_unresolved")
-			// Fall back to legacy heuristics for targets in this segment.
-			for _, p := range bashReadTargets(seg) {
-				a.Ops = append(a.Ops, shellOp{
-					Type:   shellOpRead,
-					Path:   resolveShellPath(p, effectiveCwd),
-					Cwd:    effectiveCwd,
-					Source: "legacy_read",
-				})
-			}
-			for _, p := range bashWriteTargets(seg) {
-				a.Ops = append(a.Ops, shellOp{
-					Type:   shellOpMutation,
-					Path:   resolveShellPath(p, effectiveCwd),
-					Cwd:    effectiveCwd,
-					Source: "legacy_write",
-				})
-			}
-			continue
-		}
-
-		cmd := argv[0]
-		low := strings.ToLower(cmd)
-
-		if low == "cd" {
-			if len(argv) > 1 {
-				effectiveCwd = resolveShellPath(argv[1], effectiveCwd)
-			} else {
-				a.Ambiguity = append(a.Ambiguity, "cd_no_target")
-			}
-			continue
-		}
-
-		a.Ops = append(a.Ops, extractOpsFromArgv(argv, effectiveCwd)...)
-
-		// Preserve broad write/read detection coverage for shell syntax patterns
-		// not yet represented in command-specific extraction logic.
-		for _, p := range bashReadTargets(seg) {
-			a.Ops = append(a.Ops, shellOp{
-				Type:   shellOpRead,
-				Path:   resolveShellPath(p, effectiveCwd),
-				Cwd:    effectiveCwd,
-				Source: "legacy_read",
-			})
-		}
-		for _, p := range bashWriteTargets(seg) {
-			a.Ops = append(a.Ops, shellOp{
-				Type:   shellOpMutation,
-				Path:   resolveShellPath(p, effectiveCwd),
-				Cwd:    effectiveCwd,
-				Source: "legacy_write",
-			})
+		// Also analyze wrapper inner segments (sh -c / bash -lc, etc.) so read/write
+		// policy enforcement applies to equivalent wrapped commands.
+		wrappedCwd := effectiveCwd
+		candidates := expandCommandRuleSegments(seg)
+		for _, wrappedSeg := range candidates[1:] {
+			wrappedCwd = analyzeSegmentOps(&a, wrappedSeg, wrappedCwd)
 		}
 	}
 
 	a.EffectiveCwd = effectiveCwd
 	a.Ops = dedupeOps(a.Ops)
 	return a
+}
+
+func analyzeSegmentOps(a *shellAnalysis, seg, cwd string) string {
+	a.Ops = append(a.Ops, shellOp{Type: shellOpExec, Command: seg, Cwd: cwd, Source: "parser"})
+
+	argv, ok := parseShellArgv(seg)
+	if !ok || len(argv) == 0 {
+		a.Ambiguity = append(a.Ambiguity, "argv_unresolved")
+		// Fall back to legacy heuristics for targets in this segment.
+		for _, p := range bashReadTargets(seg) {
+			a.Ops = append(a.Ops, shellOp{
+				Type:   shellOpRead,
+				Path:   resolveShellPath(p, cwd),
+				Cwd:    cwd,
+				Source: "legacy_read",
+			})
+		}
+		for _, p := range bashWriteTargets(seg) {
+			a.Ops = append(a.Ops, shellOp{
+				Type:   shellOpMutation,
+				Path:   resolveShellPath(p, cwd),
+				Cwd:    cwd,
+				Source: "legacy_write",
+			})
+		}
+		return cwd
+	}
+
+	cmd := argv[0]
+	low := strings.ToLower(cmd)
+	if low == "cd" {
+		if len(argv) > 1 {
+			return resolveShellPath(argv[1], cwd)
+		}
+		a.Ambiguity = append(a.Ambiguity, "cd_no_target")
+		return cwd
+	}
+
+	a.Ops = append(a.Ops, extractOpsFromArgv(argv, cwd)...)
+
+	// Preserve broad write/read detection coverage for shell syntax patterns not
+	// yet represented in command-specific extraction logic.
+	for _, p := range bashReadTargets(seg) {
+		a.Ops = append(a.Ops, shellOp{
+			Type:   shellOpRead,
+			Path:   resolveShellPath(p, cwd),
+			Cwd:    cwd,
+			Source: "legacy_read",
+		})
+	}
+	for _, p := range bashWriteTargets(seg) {
+		a.Ops = append(a.Ops, shellOp{
+			Type:   shellOpMutation,
+			Path:   resolveShellPath(p, cwd),
+			Cwd:    cwd,
+			Source: "legacy_write",
+		})
+	}
+	return cwd
 }
 
 func parseShellArgv(seg string) ([]string, bool) {

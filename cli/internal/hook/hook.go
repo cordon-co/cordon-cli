@@ -372,38 +372,12 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 	commandPassID := ""
 	commandPassNotify := false
 
-	// Check each segment of the command against built-in and custom command rules.
+	// Check each segment of the command (and unwrapped wrapper segments) against
+	// built-in and custom command rules.
 	for i, seg := range analysis.Commands {
-		// Built-in rules are always checked (no DB needed).
-		if matched := CheckBuiltinRules(seg); matched != nil {
-			reason := commandRuleDenyReason(matched, agent)
-			event := &Event{
-				ToolName:             payload.ToolName,
-				ToolInput:            payload.ToolInput,
-				CommandRaw:           analysis.CommandRaw,
-				CommandParsed:        analysis.ParsedOK,
-				CommandParseError:    analysis.ParseError,
-				CommandParser:        analysis.Parser,
-				CommandParserVersion: analysis.ParserVersion,
-				CommandOpsJSON:       analysis.opsJSON(),
-				DeniedOpIndex:        i,
-				DeniedOpReason:       "prevent-command rule violation",
-				MatchedRulePattern:   matched.Pattern,
-				MatchedRuleType:      matched.RuleType,
-				Ambiguity:            analysis.ambiguityText(),
-				Decision:             DecisionDeny,
-				Cwd:                  payload.Cwd,
-			}
-			if err := encodeClaudeDeny(w, reason); err != nil {
-				return nil, err
-			}
-			fmt.Fprintf(errW, "%s\n", reason)
-			return event, ErrDenied
-		}
-
-		// Custom rules from the policy database.
-		if cmdChecker != nil {
-			if allowed, passID, matched, cmdNotify := cmdChecker(seg, payload.Cwd); !allowed && matched != nil {
+		for _, candidate := range expandCommandRuleSegments(seg) {
+			// Built-in rules are always checked (no DB needed).
+			if matched := CheckBuiltinRules(candidate); matched != nil {
 				reason := commandRuleDenyReason(matched, agent)
 				event := &Event{
 					ToolName:             payload.ToolName,
@@ -421,17 +395,46 @@ func evaluateBash(payload hookPayload, w io.Writer, errW io.Writer, checker Poli
 					Ambiguity:            analysis.ambiguityText(),
 					Decision:             DecisionDeny,
 					Cwd:                  payload.Cwd,
-					Notify:               cmdNotify,
 				}
 				if err := encodeClaudeDeny(w, reason); err != nil {
 					return nil, err
 				}
 				fmt.Fprintf(errW, "%s\n", reason)
 				return event, ErrDenied
-			} else if allowed && passID != "" {
-				commandPassID = passID
-				if cmdNotify {
-					commandPassNotify = true
+			}
+
+			// Custom rules from the policy database.
+			if cmdChecker != nil {
+				if allowed, passID, matched, cmdNotify := cmdChecker(candidate, payload.Cwd); !allowed && matched != nil {
+					reason := commandRuleDenyReason(matched, agent)
+					event := &Event{
+						ToolName:             payload.ToolName,
+						ToolInput:            payload.ToolInput,
+						CommandRaw:           analysis.CommandRaw,
+						CommandParsed:        analysis.ParsedOK,
+						CommandParseError:    analysis.ParseError,
+						CommandParser:        analysis.Parser,
+						CommandParserVersion: analysis.ParserVersion,
+						CommandOpsJSON:       analysis.opsJSON(),
+						DeniedOpIndex:        i,
+						DeniedOpReason:       "prevent-command rule violation",
+						MatchedRulePattern:   matched.Pattern,
+						MatchedRuleType:      matched.RuleType,
+						Ambiguity:            analysis.ambiguityText(),
+						Decision:             DecisionDeny,
+						Cwd:                  payload.Cwd,
+						Notify:               cmdNotify,
+					}
+					if err := encodeClaudeDeny(w, reason); err != nil {
+						return nil, err
+					}
+					fmt.Fprintf(errW, "%s\n", reason)
+					return event, ErrDenied
+				} else if allowed && passID != "" {
+					commandPassID = passID
+					if cmdNotify {
+						commandPassNotify = true
+					}
 				}
 			}
 		}

@@ -128,6 +128,64 @@ func splitCompoundCommand(command string) []string {
 	return segments
 }
 
+// expandCommandRuleSegments returns the command segments to evaluate for
+// command-rule enforcement, including common shell wrapper inner commands.
+func expandCommandRuleSegments(segment string) []string {
+	return expandCommandRuleSegmentsDepth(strings.TrimSpace(segment), 0, 2)
+}
+
+func expandCommandRuleSegmentsDepth(segment string, depth, maxDepth int) []string {
+	if segment == "" {
+		return nil
+	}
+	out := []string{segment}
+	if depth >= maxDepth {
+		return out
+	}
+
+	argv, ok := parseShellArgv(segment)
+	if !ok || len(argv) == 0 {
+		return out
+	}
+	inner, ok := unwrapShellCommandArg(argv)
+	if !ok || strings.TrimSpace(inner) == "" {
+		return out
+	}
+	for _, innerSeg := range splitCompoundCommand(inner) {
+		out = append(out, expandCommandRuleSegmentsDepth(innerSeg, depth+1, maxDepth)...)
+	}
+	return out
+}
+
+func unwrapShellCommandArg(argv []string) (string, bool) {
+	if len(argv) < 3 {
+		return "", false
+	}
+	switch strings.ToLower(argv[0]) {
+	case "sh", "bash", "zsh", "dash", "ksh":
+	default:
+		return "", false
+	}
+
+	for i := 1; i < len(argv)-1; i++ {
+		if isShellCommandOption(argv[i]) {
+			return argv[i+1], true
+		}
+	}
+	return "", false
+}
+
+func isShellCommandOption(tok string) bool {
+	if tok == "-c" || tok == "--command" {
+		return true
+	}
+	if !strings.HasPrefix(tok, "-") || len(tok) <= 1 {
+		return false
+	}
+	// Combined short options where c appears, e.g. -lc or -cl.
+	return strings.Contains(tok[1:], "c")
+}
+
 // commandRuleDenyReason returns the denial message for a matched command rule.
 func commandRuleDenyReason(rule *MatchedRule, agent string) string {
 	if supportsMCPElicitation(agent) {

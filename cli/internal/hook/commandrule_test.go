@@ -68,3 +68,82 @@ func TestCommandRuleDenyReason_OmitsMCPForGeminiAndOpenCode(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckBuiltinRules_DenyCordonCommands(t *testing.T) {
+	rule := CheckBuiltinRules("cordon status")
+	if rule == nil {
+		t.Fatal("expected built-in deny rule for cordon status, got nil")
+	}
+	if rule.Pattern != "cordon *" {
+		t.Fatalf("rule.Pattern = %q, want %q", rule.Pattern, "cordon *")
+	}
+}
+
+func TestCheckBuiltinRules_AllowOverridesDenyForCordonHook(t *testing.T) {
+	rule := CheckBuiltinRules("cordon hook")
+	if rule != nil {
+		t.Fatalf("expected built-in allow override for cordon hook, got deny rule %q", rule.Pattern)
+	}
+}
+
+func TestExpandCommandRuleSegments_UnwrapsShellCommand(t *testing.T) {
+	got := expandCommandRuleSegments(`bash -lc 'git commit -m "test" && git status'`)
+	wantHas := []string{
+		`bash -lc 'git commit -m "test" && git status'`,
+		`git commit -m "test"`,
+		"git status",
+	}
+	for _, w := range wantHas {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("segments %#v missing expected %q", got, w)
+		}
+	}
+}
+
+func TestExpandCommandRuleSegmentsDepth_RespectsMaxDepth(t *testing.T) {
+	got := expandCommandRuleSegmentsDepth(`bash -lc 'sh -c "git status"'`, 0, 1)
+	wantHas := []string{
+		`bash -lc 'sh -c "git status"'`,
+		`sh -c "git status"`,
+	}
+	for _, w := range wantHas {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("segments %#v missing expected %q", got, w)
+		}
+	}
+	for _, g := range got {
+		if g == "git status" {
+			t.Fatalf("segments %#v unexpectedly contains depth-limited inner command", got)
+		}
+	}
+}
+
+func TestUnwrapShellCommandArg_LongCommandOption(t *testing.T) {
+	got, ok := unwrapShellCommandArg([]string{"bash", "--command", "git status"})
+	if !ok {
+		t.Fatal("expected unwrap success for --command")
+	}
+	if got != "git status" {
+		t.Fatalf("unwrap = %q, want git status", got)
+	}
+}
+
+func TestIsShellCommandOption_CombinedShortFlags(t *testing.T) {
+	if !isShellCommandOption("-lc") {
+		t.Fatal("expected -lc to be recognized as command-carrying option")
+	}
+}
