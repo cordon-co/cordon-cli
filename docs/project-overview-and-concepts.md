@@ -20,6 +20,30 @@ In this repository:
 
 See the project README for canonical concept definitions and terminology.
 
+## Policy enforcement model (high level)
+
+Cordon enforces two related but different policy types:
+
+- **File policy enforcement**
+  - Protects files, folders, and globs in the repository.
+  - Evaluates whether a tool operation would read from or write to protected paths.
+
+- **Command policy enforcement**
+  - Protects shell command intent (for example destructive operations or sensitive commands).
+  - Evaluates each shell command segment against command rules before execution.
+
+For command rules, matching is intentionally layered:
+
+- **`string` matching**
+  - Backward-compatible command text matching (exact/glob/prefix style).
+  - Useful for straightforward command patterns.
+
+- **`argv` matching**
+  - Token-aware command matching that looks at command words/flags.
+  - Helps catch equivalent commands where option order differs (for example force flags appearing later in the command).
+
+In practice, this means file and command enforcement share the same policy system but use different matching models suited to their domain.
+
 ## High-level runtime architecture
 
 1. User runs a command (`init`, `file add`, `pass issue`, etc.)
