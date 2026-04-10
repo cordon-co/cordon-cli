@@ -237,3 +237,65 @@ func TestEvaluate_RunInTerminalUnwrapsShellWrapperForAllowPass(t *testing.T) {
 		t.Fatal("event.Notify = false, want true")
 	}
 }
+
+func TestEvaluate_RunInTerminalUnwrapsShellWrapperForReadPolicy(t *testing.T) {
+	payload := `{
+  "tool_name": "run_in_terminal",
+  "tool_input": {"command":"sh -c 'cat .env'"},
+  "cwd": "/repo"
+}`
+
+	rdChecker := func(filePath, cwd string) (bool, string, bool) {
+		if filePath == "/repo/.env" {
+			return false, "", false
+		}
+		return true, "", false
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, rdChecker, nil, "")
+	if err != ErrDenied {
+		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want non-nil deny event")
+	}
+	if event.DeniedOpReason != "prevent-read rule violation" {
+		t.Fatalf("event.DeniedOpReason = %q, want prevent-read rule violation", event.DeniedOpReason)
+	}
+	if event.FilePath != "/repo/.env" {
+		t.Fatalf("event.FilePath = %q, want /repo/.env", event.FilePath)
+	}
+}
+
+func TestEvaluate_RunInTerminalUnwrapsShellWrapperForWritePolicy(t *testing.T) {
+	payload := `{
+  "tool_name": "run_in_terminal",
+  "tool_input": {"command":"bash -lc 'echo hello > out.txt'"},
+  "cwd": "/repo"
+}`
+
+	checker := func(filePath, cwd string) (bool, string, bool) {
+		if filePath == "/repo/out.txt" {
+			return false, "", false
+		}
+		return true, "", false
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, checker, nil, nil, "")
+	if err != ErrDenied {
+		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want non-nil deny event")
+	}
+	if event.DeniedOpReason != "prevent-write rule violation" {
+		t.Fatalf("event.DeniedOpReason = %q, want prevent-write rule violation", event.DeniedOpReason)
+	}
+	if event.FilePath != "/repo/out.txt" {
+		t.Fatalf("event.FilePath = %q, want /repo/out.txt", event.FilePath)
+	}
+}

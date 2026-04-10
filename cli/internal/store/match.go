@@ -1,7 +1,9 @@
 package store
 
 import (
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -15,10 +17,8 @@ import (
 //
 // Three matching strategies are tried against each path form:
 //  1. Exact match after path cleaning.
-//  2. Single-level glob via filepath.Match (e.g. "src/*.go", "*.gitignore").
+//  2. Glob match (supports *, ?, [], and ** for recursive path matching).
 //  3. Directory prefix match: filePath is somewhere inside the rule directory.
-//
-// Note: double-star (**) globs are not yet supported.
 func pathMatchesFileRule(pattern, filePath, repoRoot string) bool {
 	if matchOnePath(pattern, filePath) {
 		return true
@@ -44,8 +44,8 @@ func matchOnePath(pattern, filePath string) bool {
 		return true
 	}
 
-	// 2. Single-level glob match.
-	if matched, err := filepath.Match(cleanPattern, cleanFile); err == nil && matched {
+	// 2. Glob match.
+	if matchPathPattern(cleanPattern, cleanFile) {
 		return true
 	}
 
@@ -58,4 +58,65 @@ func matchOnePath(pattern, filePath string) bool {
 	}
 
 	return false
+}
+
+func matchPathPattern(pattern, filePath string) bool {
+	p := filepath.ToSlash(pattern)
+	f := filepath.ToSlash(filePath)
+
+	if strings.Contains(p, "**") {
+		return matchDoubleStarPattern(p, f)
+	}
+	matched, err := path.Match(p, f)
+	return err == nil && matched
+}
+
+func matchDoubleStarPattern(pattern, filePath string) bool {
+	re, err := regexp.Compile(doubleStarToRegexp(pattern))
+	if err != nil {
+		return false
+	}
+	return re.MatchString(filePath)
+}
+
+func doubleStarToRegexp(pattern string) string {
+	var b strings.Builder
+	b.WriteString("^")
+
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		switch ch {
+		case '*':
+			if i+1 < len(pattern) && pattern[i+1] == '*' {
+				b.WriteString(".*")
+				i++
+			} else {
+				b.WriteString(`[^/]*`)
+			}
+		case '?':
+			b.WriteString(`[^/]`)
+		case '[':
+			// Preserve simple character class semantics.
+			j := i + 1
+			for j < len(pattern) && pattern[j] != ']' {
+				j++
+			}
+			if j < len(pattern) {
+				b.WriteByte('[')
+				b.WriteString(pattern[i+1 : j])
+				b.WriteByte(']')
+				i = j
+			} else {
+				b.WriteString(`\[`)
+			}
+		default:
+			if strings.ContainsRune(`.+()|{}^$\\`, rune(ch)) {
+				b.WriteByte('\\')
+			}
+			b.WriteByte(ch)
+		}
+	}
+
+	b.WriteString("$")
+	return b.String()
 }

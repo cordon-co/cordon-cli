@@ -54,6 +54,36 @@ func TestFileRuleForPath_DirectoryPrefix(t *testing.T) {
 	}
 }
 
+func TestFileRuleForPath_DoubleStarRecursiveGlob(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddFileRule(db, "**/*.env", "deny", "standard", "test", false); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := FileRuleForPath(db, "apps/web/config/.env", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule == nil {
+		t.Fatal("expected **/*.env to match nested .env path, got nil")
+	}
+}
+
+func TestFileRuleForPath_DoubleStarRecursiveGlobNoMatch(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddFileRule(db, "**/*.env", "deny", "standard", "test", false); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := FileRuleForPath(db, "apps/web/config/env.txt", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule != nil {
+		t.Fatalf("expected no match for non-.env file, got %q", rule.Pattern)
+	}
+}
+
 func TestFileRuleForPath_AllowOverridesDeny(t *testing.T) {
 	db := newTestPolicyDB(t)
 	if _, err := AddFileRule(db, "src", "deny", "standard", "test", false); err != nil {
