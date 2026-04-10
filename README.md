@@ -108,7 +108,7 @@ cordon pass revoke <pass-id>
 - All commands accept `--json` for structured output. Schemas not finalised at this time.
 
 - `<pattern>` can be a file path, folder path, glob pattern, or command pattern.
-Examples: `src/main.go`, `src/`, `**/*.env`, `git push --force*`.
+Examples: `src/main.go`, `src/`, `**/*.env`, `git push *--force*`.
 
 
 ## Documentation

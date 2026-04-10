@@ -1,13 +1,16 @@
 package store
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strings"
 	"time"
+
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // StandardGuardrails is the default set of guardrail command rules offered during
@@ -17,8 +20,8 @@ import (
 var StandardGuardrails = []string{
 	// Destructive git operations
 	"git reset --hard*",
-	"git push --force*",
-	"git push -f*",
+	"git push *--force*",
+	"git push *-f*",
 	"git clean -f*",
 	// Destructive filesystem operations
 	"rm -rf /*",
@@ -162,10 +165,21 @@ func MatchCommandRule(db *sql.DB, command string) (*CommandRule, error) {
 	return firstDeny, nil
 }
 
-// commandMatchesPattern reports whether command matches the glob-style pattern.
-// The pattern is matched against the full command string. The special token *
-// matches any sequence of characters.
+// commandMatchesPattern reports whether command matches a rule pattern.
+// Matching is additive:
+//   - string matcher (exact/glob/prefix),
+//   - argv matcher for option-sensitive patterns.
 func commandMatchesPattern(command, pattern string) bool {
+	if commandMatchesString(command, pattern) {
+		return true
+	}
+	return commandMatchesArgv(command, pattern)
+}
+
+// commandMatchesString applies legacy string semantics:
+// exact match, full-string glob match, and plain-prefix match.
+// This is command-pattern matching logic (not file-rule path matching).
+func commandMatchesString(command, pattern string) bool {
 	command = strings.TrimSpace(command)
 	pattern = strings.TrimSpace(pattern)
 
@@ -174,8 +188,9 @@ func commandMatchesPattern(command, pattern string) bool {
 		return true
 	}
 
-	// filepath.Match uses the same glob syntax we want.
-	matched, err := filepath.Match(pattern, command)
+	// path.Match provides shell-style glob matching on plain strings and avoids
+	// OS-specific filepath separator behavior from path/filepath.
+	matched, err := path.Match(pattern, command)
 	if err != nil {
 		// Invalid pattern — treat as no match.
 		matched = false
@@ -188,7 +203,9 @@ func commandMatchesPattern(command, pattern string) bool {
 	// command prefix so "echo" matches "echo hello" and "git push" matches
 	// "git push origin main".
 	if !hasGlobMeta(pattern) {
-		return strings.HasPrefix(command, pattern+" ")
+		if strings.HasPrefix(command, pattern+" ") {
+			return true
+		}
 	}
 
 	return false
@@ -198,4 +215,118 @@ var globMetaRegex = regexp.MustCompile(`[*?\[]`)
 
 func hasGlobMeta(pattern string) bool {
 	return globMetaRegex.MatchString(pattern)
+}
+
+// commandMatchesArgv matches a command by split shell tokens with
+// order-insensitive option matching. It is intentionally conservative and only
+// engages when pattern contains at least one option token and no positional
+// tokens after the first option token.
+func commandMatchesArgv(command, pattern string) bool {
+	cmdTokens, ok := shellCommandTokens(command)
+	if !ok || len(cmdTokens) == 0 {
+		return false
+	}
+	patTokens, ok := shellCommandTokens(pattern)
+	if !ok || len(patTokens) == 0 {
+		return false
+	}
+
+	firstOpt := -1
+	for i, tok := range patTokens {
+		if isOptionToken(tok) {
+			firstOpt = i
+			break
+		}
+	}
+	if firstOpt < 0 {
+		return false
+	}
+	// To avoid surprising behavior drift, only use argv option matching for
+	// patterns whose suffix is option-only (e.g. "git push --force*").
+	for _, tok := range patTokens[firstOpt:] {
+		if !isOptionToken(tok) {
+			return false
+		}
+	}
+
+	// Prefix argv tokens (e.g. "git push") must match in order.
+	if len(cmdTokens) < firstOpt {
+		return false
+	}
+	for i := 0; i < firstOpt; i++ {
+		if !tokenGlobMatch(patTokens[i], cmdTokens[i]) {
+			return false
+		}
+	}
+
+	// Option argv tokens match anywhere in the command tail.
+	tail := cmdTokens[firstOpt:]
+	for _, optPat := range patTokens[firstOpt:] {
+		found := false
+		for _, tok := range tail {
+			if tokenGlobMatch(optPat, tok) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func tokenGlobMatch(patternTok, token string) bool {
+	if patternTok == token {
+		return true
+	}
+	matched, err := path.Match(patternTok, token)
+	return err == nil && matched
+}
+
+func isOptionToken(tok string) bool {
+	return strings.HasPrefix(tok, "-")
+}
+
+// shellCommandTokens parses a shell command segment and returns its call tokens
+// as printed shell words. Returns false if parsing fails or no call expression
+// can be found.
+func shellCommandTokens(command string) ([]string, bool) {
+	parser := syntax.NewParser(syntax.Variant(syntax.LangBash))
+	file, err := parser.Parse(strings.NewReader(command), "")
+	if err != nil {
+		return nil, false
+	}
+
+	var call *syntax.CallExpr
+	syntax.Walk(file, func(node syntax.Node) bool {
+		if node == nil || call != nil {
+			return true
+		}
+		if c, ok := node.(*syntax.CallExpr); ok {
+			call = c
+			return false
+		}
+		return true
+	})
+	if call == nil {
+		return nil, false
+	}
+
+	printer := syntax.NewPrinter()
+	tokens := make([]string, 0, len(call.Args))
+	for _, w := range call.Args {
+		var buf bytes.Buffer
+		if err := printer.Print(&buf, w); err != nil {
+			return nil, false
+		}
+		tok := strings.TrimSpace(buf.String())
+		if tok != "" {
+			tokens = append(tokens, tok)
+		}
+	}
+	if len(tokens) == 0 {
+		return nil, false
+	}
+	return tokens, true
 }

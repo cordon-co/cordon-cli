@@ -34,6 +34,66 @@ func TestMatchCommandRule_GlobMatch(t *testing.T) {
 	}
 }
 
+func TestMatchCommandRule_ArgvFlagMatchOutOfOrder(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "git push --force*", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := MatchCommandRule(db, "git push -u origin main --force")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule == nil {
+		t.Fatal("expected argv option match for reordered --force flag, got nil")
+	}
+}
+
+func TestMatchCommandRule_ArgvFlagRequiresCommandPrefix(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "git push --force*", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := MatchCommandRule(db, "git pull --force")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule != nil {
+		t.Fatalf("expected no match for non-push command, got %q", rule.Pattern)
+	}
+}
+
+func TestMatchCommandRule_ArgvShortFlagMatchOutOfOrder(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "git push -f*", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := MatchCommandRule(db, "git push origin main -f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule == nil {
+		t.Fatal("expected argv option match for reordered -f flag, got nil")
+	}
+}
+
+func TestMatchCommandRule_ArgvShortFlagRequiresCommandPrefix(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "git push -f*", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := MatchCommandRule(db, "git pull -f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule != nil {
+		t.Fatalf("expected no match for non-push command, got %q", rule.Pattern)
+	}
+}
+
 func TestMatchCommandRule_PrefixMatchForPlainPattern(t *testing.T) {
 	db := newTestPolicyDB(t)
 	if _, err := AddRule(db, "echo", "deny", "standard", "test"); err != nil {

@@ -131,6 +131,32 @@ func TestActivePassForCommand_Match(t *testing.T) {
 	}
 }
 
+func TestActivePassForCommand_ArgvFlagMatchOutOfOrder(t *testing.T) {
+	dataDB := newTestDataDB(t)
+	now := time.Now().UTC()
+
+	p := Pass{
+		FileRuleID: "rule-cmd-argv-1",
+		Pattern:    "git push --force*",
+		IssuedTo:   "test",
+		IssuedBy:   "test",
+		Status:     "active",
+		IssuedAt:   now.Format(time.RFC3339),
+		ExpiresAt:  now.Add(time.Hour).Format(time.RFC3339),
+	}
+	if err := IssuePass(dataDB, p); err != nil {
+		t.Fatal(err)
+	}
+
+	active, err := ActivePassForCommand(dataDB, "git push -u origin main --force")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active == nil {
+		t.Fatal("expected active command pass via argv flag match, got nil")
+	}
+}
+
 func TestActivePassForCommand_ExpiredNoMatch(t *testing.T) {
 	dataDB := newTestDataDB(t)
 	now := time.Now().UTC()
