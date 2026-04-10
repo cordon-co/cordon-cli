@@ -188,3 +188,44 @@ func TestMatchCommandRule_ParseFailureFallsBackToStringMatch(t *testing.T) {
 		t.Fatal("expected string matcher fallback to match parse-failed command")
 	}
 }
+
+func TestMatchCommandRule_CommandAndCommandStarEquivalent(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "git commit *", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []string{
+		"git commit",
+		"git commit -m test",
+	}
+	for _, cmd := range tests {
+		t.Run(cmd, func(t *testing.T) {
+			rule, err := MatchCommandRule(db, cmd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rule == nil {
+				t.Fatalf("expected %q to match git commit * rule", cmd)
+			}
+		})
+	}
+}
+
+func TestMatchCommandRule_AllowOverrideForCommandStar(t *testing.T) {
+	db := newTestPolicyDB(t)
+	if _, err := AddRule(db, "git commit", "deny", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddRule(db, "git commit *", "allow", "standard", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	rule, err := MatchCommandRule(db, "git commit -m test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule != nil {
+		t.Fatalf("expected allow rule git commit * to override deny, got deny %q", rule.Pattern)
+	}
+}

@@ -85,3 +85,24 @@ func TestCheckBuiltinRules_AllowOverridesDenyForCordonHook(t *testing.T) {
 		t.Fatalf("expected built-in allow override for cordon hook, got deny rule %q", rule.Pattern)
 	}
 }
+
+func TestExpandCommandRuleSegments_UnwrapsShellCommand(t *testing.T) {
+	got := expandCommandRuleSegments(`bash -lc 'git commit -m "test" && git status'`)
+	wantHas := []string{
+		`bash -lc 'git commit -m "test" && git status'`,
+		`git commit -m "test"`,
+		"git status",
+	}
+	for _, w := range wantHas {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("segments %#v missing expected %q", got, w)
+		}
+	}
+}

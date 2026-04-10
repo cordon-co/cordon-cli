@@ -178,3 +178,62 @@ func TestEvaluate_OpenCodeCommandToolNameStillChecksCommandRules(t *testing.T) {
 		t.Fatalf("event.DeniedOpReason = %q, want prevent-command rule violation", event.DeniedOpReason)
 	}
 }
+
+func TestEvaluate_RunInTerminalUnwrapsShellWrapperForCommandRules(t *testing.T) {
+	payload := `{
+  "tool_name": "run_in_terminal",
+  "tool_input": {"command":"sh -c 'git commit -m \"test\"'"},
+  "cwd": "/repo"
+}`
+
+	cmdChecker := func(command, cwd string) (bool, string, *MatchedRule, bool) {
+		if strings.HasPrefix(strings.TrimSpace(command), "git commit") {
+			return false, "", &MatchedRule{Pattern: "git commit", RuleType: "deny", RuleAuthority: "standard"}, false
+		}
+		return true, "", nil, false
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, nil, cmdChecker, "")
+	if err != ErrDenied {
+		t.Fatalf("Evaluate error = %v, want ErrDenied", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want non-nil deny event")
+	}
+	if event.DeniedOpReason != "prevent-command rule violation" {
+		t.Fatalf("event.DeniedOpReason = %q, want prevent-command rule violation", event.DeniedOpReason)
+	}
+}
+
+func TestEvaluate_RunInTerminalUnwrapsShellWrapperForAllowPass(t *testing.T) {
+	payload := `{
+  "tool_name": "run_in_terminal",
+  "tool_input": {"command":"bash -lc 'git commit -m \"test\"'"},
+  "cwd": "/repo"
+}`
+
+	cmdChecker := func(command, cwd string) (bool, string, *MatchedRule, bool) {
+		if strings.HasPrefix(strings.TrimSpace(command), "git commit") {
+			return true, "pass-cmd-wrapper", nil, true
+		}
+		return true, "", nil, false
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	event, err := Evaluate(strings.NewReader(payload), &out, &errOut, nil, nil, cmdChecker, "")
+	if err != nil {
+		t.Fatalf("Evaluate error = %v, want nil", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want non-nil allow event")
+	}
+	if event.PassID != "pass-cmd-wrapper" {
+		t.Fatalf("event.PassID = %q, want pass-cmd-wrapper", event.PassID)
+	}
+	if !event.Notify {
+		t.Fatal("event.Notify = false, want true")
+	}
+}

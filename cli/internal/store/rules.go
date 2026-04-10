@@ -181,7 +181,7 @@ func commandMatchesPattern(command, pattern string) bool {
 // This is command-pattern matching logic (not file-rule path matching).
 func commandMatchesString(command, pattern string) bool {
 	command = strings.TrimSpace(command)
-	pattern = strings.TrimSpace(pattern)
+	pattern = canonicalCommandPattern(strings.TrimSpace(pattern))
 
 	// Exact match.
 	if command == pattern {
@@ -209,6 +209,23 @@ func commandMatchesString(command, pattern string) bool {
 	}
 
 	return false
+}
+
+// canonicalCommandPattern normalizes simple command-prefix patterns so
+// "<cmd>" and "<cmd> *" are treated equivalently for matching.
+// This only applies when the trailing "*" is the sole glob metacharacter.
+func canonicalCommandPattern(pattern string) string {
+	if !strings.HasSuffix(pattern, " *") {
+		return pattern
+	}
+	base := strings.TrimSpace(strings.TrimSuffix(pattern, " *"))
+	if base == "" {
+		return pattern
+	}
+	if hasGlobMeta(base) {
+		return pattern
+	}
+	return base
 }
 
 var globMetaRegex = regexp.MustCompile(`[*?\[]`)
