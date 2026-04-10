@@ -41,8 +41,11 @@ For command rules, matching is intentionally layered:
 - **`argv` matching**
   - Token-aware command matching that looks at command words/flags.
   - Helps catch equivalent commands where option order differs (for example force flags appearing later in the command).
+  - Common shell wrappers (`sh -c`, `bash -lc`, etc.) are unwrapped so equivalent inner commands are evaluated consistently.
 
 In practice, this means file and command enforcement share the same policy system but use different matching models suited to their domain.
+
+File pattern support includes recursive glob usage (`**`) for nested path matching.
 
 ## High-level runtime architecture
 

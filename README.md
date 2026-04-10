@@ -109,6 +109,8 @@ cordon pass revoke <pass-id>
 
 - `<pattern>` can be a file path, folder path, glob pattern, or command pattern.
 Examples: `src/main.go`, `src/`, `**/*.env`, `git push *--force*`.
+- File globs support recursive `**` matching.
+- Command rules evaluate direct commands and common wrapped forms (for example `sh -c` and `bash -lc`).
 
 
 ## Documentation
